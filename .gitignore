@@ -1,0 +1,34 @@
+# Dart e Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+coverage/
+tmp/
+
+# IDEs e sistema operacional
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Configurações locais e credenciais
+.env
+.env.*
+!.env.example
+android/local.properties
+android/key.properties
+*.jks
+*.keystore
+
+# Arquivos gerados das plataformas
+**/flutter/ephemeral/
+**/Flutter/ephemeral/
+**/Pods/
+**/.symlinks/
+**/.gradle/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
