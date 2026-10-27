@@ -18,9 +18,21 @@ String newId() =>
 String monthKey(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}';
 
+/// Descreve dias do mês em português: "dia 5", "dias 10 e 25".
+String daysLabel(List<int> days) {
+  if (days.length == 1) return 'dia ${days.first}';
+  final head = days.take(days.length - 1).join(', ');
+  return 'dias $head e ${days.last}';
+}
+
 int? parseMoney(String text) {
   var v = text.replaceAll('R\$', '').replaceAll(RegExp(r'\s'), '');
-  if (v.contains(',')) v = v.replaceAll('.', '').replaceAll(',', '.');
+  if (v.contains(',')) {
+    v = v.replaceAll('.', '').replaceAll(',', '.');
+  } else if (RegExp(r'^\d{1,3}(\.\d{3})+$').hasMatch(v)) {
+    // "1.250" sem vírgula é milhar, não decimal.
+    v = v.replaceAll('.', '');
+  }
   if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(v)) return null;
   final n = double.tryParse(v);
   if (n == null || !n.isFinite || n > 999999999) return null;
@@ -128,6 +140,7 @@ class MonthPlan {
     this.withdrawal = 0,
     this.withdrawalDay = 5,
     this.reserveAllocation = 0,
+    this.reserveDeposited = false,
   }) : items = items ?? [],
        spending = spending ?? [],
        paid = paid ?? {};
@@ -136,6 +149,7 @@ class MonthPlan {
   final List<Spending> spending;
   final Set<String> paid;
   int withdrawal, withdrawalDay, reserveAllocation;
+  bool reserveDeposited;
   DateTime get date => DateTime.parse('$key-01');
   int spent(String id) =>
       spending.where((s) => s.itemId == id).fold(0, (v, s) => v + s.amount);
@@ -242,6 +256,7 @@ class MonthPlan {
     'withdrawal': withdrawal,
     'withdrawalDay': withdrawalDay,
     'reserveAllocation': reserveAllocation,
+    'reserveDeposited': reserveDeposited,
   };
   factory MonthPlan.fromJson(Map<String, dynamic> j) => MonthPlan(
     key: j['key'],
@@ -251,6 +266,7 @@ class MonthPlan {
     withdrawal: j['withdrawal'],
     withdrawalDay: j['withdrawalDay'],
     reserveAllocation: j['reserveAllocation'],
+    reserveDeposited: j['reserveDeposited'] ?? false,
   );
 }
 
@@ -265,13 +281,34 @@ class FinanceData {
   final Map<String, MonthPlan> months;
   int reserveGoal, reserveSaved, reserveMonthly;
   bool demo;
-  MonthPlan month(String key) => months.putIfAbsent(key, () {
+
+  /// Mês salvo ou, se ainda não existe, cria e guarda a partir do anterior.
+  MonthPlan month(String key) => months.putIfAbsent(key, () => preview(key));
+
+  /// Mês salvo ou um rascunho não gravado, repetido do mês anterior mais
+  /// próximo. Permite navegar sem criar meses.
+  MonthPlan preview(String key) {
+    final saved = months[key];
+    if (saved != null) return saved;
     final previous = months.keys.where((k) => k.compareTo(key) < 0).toList()
       ..sort();
     return previous.isEmpty
         ? MonthPlan(key: key)
         : months[previous.last]!.repeat(key);
-  });
+  }
+
+  /// Mês anterior mais próximo que já existe, de onde um rascunho é copiado.
+  String? sourceOf(String key) {
+    if (months.containsKey(key)) return null;
+    final previous = months.keys.where((k) => k.compareTo(key) < 0).toList()
+      ..sort();
+    return previous.lastOrNull;
+  }
+
+  bool get isEmpty =>
+      months.values.every((m) => m.items.isEmpty && m.withdrawal == 0) &&
+      reserveSaved == 0 &&
+      reserveGoal == 0;
   String encode() => jsonEncode({
     'version': 1,
     'demo': demo,
@@ -349,21 +386,32 @@ class VoiceDraft {
   final String description;
   final int? amount;
   factory VoiceDraft.parse(String text) {
-    final match = RegExp(r'\d+(?:[.,]\d{1,2})?').firstMatch(text);
+    final match = RegExp(
+      r'\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?',
+    ).firstMatch(text);
     final amount = match == null ? null : parseMoney(match.group(0)!);
-    var description = text.replaceFirst(
-      RegExp(r'^\s*(gastei|comprei|paguei)\s*', caseSensitive: false),
-      '',
-    );
+    var description = text.replaceAll(RegExp(r'R\$\s*'), '');
     if (match != null) {
-      description = description.replaceFirst(match.group(0)!, '');
+      description = description.replaceFirst(match.group(0)!, ' ');
     }
     description = description
         .replaceFirst(
-          RegExp(r'^\s*(reais\s*)?(na|no|em|de)?\s*', caseSensitive: false),
+          RegExp(r'^\s*(eu\s+)?(gastei|comprei|paguei)', caseSensitive: false),
           '',
         )
+        .replaceFirst(
+          RegExp(
+            r'^\s*((reais|real)(\s+|$))?(e\s+\d+\s+centavos(\s+|$))?'
+            r'((na|no|nas|nos|em|de|da|do|com)\s+)?',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+    if (description.isNotEmpty) {
+      description = description[0].toUpperCase() + description.substring(1);
+    }
     return VoiceDraft(description, amount);
   }
 }

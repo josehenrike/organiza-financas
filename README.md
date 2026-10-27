@@ -21,16 +21,21 @@ Para Android, configure o Android SDK e um emulador ou dispositivo, execute `flu
 
 ## Funcionalidades
 
+- Primeiros passos guiados (rendas, retirada, reserva e gastos) com progresso.
 - Cadastro de rendas dos dois bolsos, retirada vinculada e reserva do negócio.
-- Adicionar, editar e excluir entradas e gastos fixos, parcelados, variáveis e eventuais.
-- Limites com acompanhamento opcional, histórico, saldo, aviso a partir de 80%, estimativa diária e exclusão com confirmação.
-- Voz em português na categoria selecionada, com revisão e confirmação antes de salvar. Também funciona digitando.
-- Agenda nos períodos 1–7, 8–14, 15–21 e 22–fim do mês; filtros por bolso e marcação de pago/recebido.
-- Resultado previsto ou pago/recebido, lucratividade, retirada, reserva planejada, caixa e histórico dos meses existentes.
-- Repetição do planejamento do mês anterior mais próximo, com avanço de parcelas. Não copia pagamentos, gastos variáveis nem eventuais; meses já criados ficam independentes.
-- Gravação local serializada, aviso de falha, backup JSON pela área de transferência e restauração validada com confirmação.
+- Adicionar, editar e excluir (com desfazer) entradas e gastos fixos, parcelados, variáveis e eventuais.
+- Botão **Registrar gasto** em todas as telas: escolha a categoria e lance o gasto em dois toques.
+- Limites com destaque opcional, histórico editável, sugestões de descrição, saldo, aviso a partir de 80%, estimativa diária e exclusão com desfazer.
+- Voz em português na categoria selecionada, com revisão e confirmação antes de salvar. Entende “1.250”, “R$ 35,90” e “50 reais”. Também funciona digitando.
+- Agenda nos períodos 1–7, 8–14, 15–21 e 22–fim do mês: resumo do que falta pagar e receber, contas atrasadas em destaque, filtros por bolso e toque na linha para marcar pago/recebido.
+- Resultado previsto ou pago/recebido, lucratividade, retirada, reserva, caixa e histórico dos meses.
+- Reserva com botão **Já guardei**, que soma o valor do mês ao saldo guardado (com desfazer).
+- Repetição do planejamento do mês anterior mais próximo, com avanço de parcelas. Navegar até um mês novo só mostra um rascunho; ele é gravado na primeira alteração. Não copia pagamentos, gastos variáveis nem eventuais; meses já gravados ficam independentes.
+- Tema claro e escuro, seguindo o sistema. No celular, formulários em tela cheia; no computador, cartões lado a lado.
+- Seletor de mês em grade (toque no nome do mês) e gráfico de colunas do resultado do negócio.
+- Gravação local serializada, aviso de falha, backup JSON pela área de transferência e restauração validada com confirmação. Se os dados salvos não abrirem, o app permite copiá-los ou começar do zero guardando uma cópia.
 
-O app inicia vazio. Use **Conhecer o app com os exemplos do PDF** para explorar outubro de 2026. A demonstração fica identificada. **Sair da demonstração**, no menu, remove os exemplos e alterações feitas neles e permite começar seus registros.
+O app inicia vazio. Use **Conhecer o app com exemplos** para explorar outubro de 2026. A demonstração fica identificada. **Sair da demonstração**, no menu, remove os exemplos e alterações feitas neles e permite começar seus registros.
 
 ## Regras de cálculo
 
@@ -40,7 +45,7 @@ O planejamento usa valores previstos de rendas, fixos, parcelas e eventuais, mai
 
 Rendas com vários dias dividem o valor mensal igualmente entre eles, preservando os centavos. Dias 29–31 são ajustados ao último dia dos meses menores. Feira e ovos da demonstração usam os sábados reais de outubro de 2026. A agenda ilustrativa do PDF não fecha com todos os itens do planejamento; a agenda do app sempre deriva dos registros.
 
-A reserva tem saldo informado manualmente e alocação planejada por mês. Alterar a alocação não simula um depósito: atualize o saldo guardado depois de transferir o dinheiro. O resultado informa que a reserva descontada do caixa é planejada.
+A reserva tem saldo guardado e alocação planejada por mês. Depois de transferir o dinheiro, toque em **Já guardei** para somar a alocação ao saldo; mudar a alocação de um mês já depositado desfaz essa marcação. No resultado “Pago e recebido”, só a reserva marcada como guardada é descontada do caixa.
 
 ## Armazenamento e limitações
 
@@ -78,4 +83,4 @@ flutter test
 flutter build web --release
 ```
 
-Os testes visuais geram imagens em `tmp/screenshots/`. O site compilado fica em `build/web/` e deve ser servido por HTTP. Antes de publicar em lojas, configure identificadores próprios (hoje `com.example.organiza_financas`), ícones e assinatura.
+Os testes visuais geram imagens em `tmp/screenshots/`. Os ícones de Android (incluindo o adaptativo), iOS e web são gerados por `flutter test tool/generate_icons_test.dart`; edite as cores e o desenho nesse arquivo e rode de novo. O site compilado fica em `build/web/` e deve ser servido por HTTP. Antes de publicar em lojas, configure identificadores próprios (hoje `com.example.organiza_financas`), ícones e assinatura.

@@ -11,6 +11,7 @@ import 'package:organiza_financas/features/finance/data/demo_data.dart';
 import 'package:organiza_financas/features/finance/data/finance_store.dart';
 import 'package:organiza_financas/features/finance/domain/finance.dart';
 import 'package:organiza_financas/features/finance/presentation/finance_home.dart';
+import 'package:organiza_financas/features/finance/presentation/finance_widgets.dart';
 import 'package:organiza_financas/features/finance/presentation/item_form.dart';
 
 class MemoryStore extends FinanceStore {
@@ -47,6 +48,7 @@ void main() {
     FinanceData data, {
     Size size = const Size(390, 844),
     double scale = 1,
+    ThemeMode mode = ThemeMode.light,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -55,6 +57,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: mode,
         locale: const Locale('pt', 'BR'),
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         supportedLocales: const [Locale('pt', 'BR')],
@@ -123,7 +127,17 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Salvar gasto'));
     await tester.pumpAndSettle();
     expect(data.month('2026-10').spent('alimentacao'), 69025);
-    expect(find.text('Padaria teste'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Padaria teste'), findsOneWidget);
+    // Editar o gasto pelo histórico.
+    await tester.tap(find.widgetWithText(ListTile, 'Padaria teste'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(1), '60');
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Salvar alteração'),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Salvar alteração'));
+    await tester.pumpAndSettle();
+    expect(data.month('2026-10').spent('alimentacao'), 70000);
     expect(tester.takeException(), isNull);
   });
   testWidgets('formulário rejeita valor inválido e cadastra renda', (
@@ -132,7 +146,11 @@ void main() {
     final data = FinanceData();
     await open(tester, data);
     await tester.ensureVisible(find.text('Adicionar renda').first);
-    await tester.tap(find.text('Adicionar renda').first);
+    // Toca na borda esquerda: o botão flutuante fica à direita.
+    final add = find.widgetWithText(OutlinedButton, 'Adicionar renda').first;
+    await tester.tapAt(
+      tester.getTopLeft(add) + Offset(24, tester.getSize(add).height / 2),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Salvar'));
     await tester.pumpAndSettle();
@@ -173,6 +191,134 @@ void main() {
     await open(tester, demoData(), size: const Size(360, 800), scale: 1.4);
     await tester.tap(find.widgetWithText(NavigationDestination, 'Agenda'));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('navegar entre meses não cria meses salvos', (tester) async {
+    final data = demoData();
+    await open(tester, data);
+    await tester.tap(find.byTooltip('Próximo mês'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Próximo mês'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Mês ainda não iniciado'), findsOneWidget);
+    await tester.tap(find.byTooltip('Mês anterior'));
+    await tester.pumpAndSettle();
+    expect(data.months.keys, ['2026-10']);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('botão de gasto rápido abre a categoria escolhida', (
+    tester,
+  ) async {
+    await open(tester, demoData());
+    await tester.tap(find.text('Registrar gasto'));
+    await tester.pumpAndSettle();
+    expect(find.text('Onde foi o gasto?'), findsOneWidget);
+    await capture(tester, 'gasto-rapido-mobile');
+    await tester.tap(find.widgetWithText(ListTile, 'Combustível'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ainda pode gastar'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('registrar depósito soma a reserva do mês', (tester) async {
+    final data = demoData();
+    await open(tester, data);
+    final button = find.text('Já guardei');
+    await tester.scrollUntilVisible(
+      button,
+      300,
+      scrollable: find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(data.reserveSaved, 85000);
+    expect(data.month('2026-10').reserveDeposited, isTrue);
+    await tester.tap(find.text('Desfazer').first);
+    await tester.pumpAndSettle();
+    expect(data.reserveSaved, 65000);
+  });
+  testWidgets('tema escuro renderiza as cinco áreas', (tester) async {
+    await open(tester, demoData(), mode: ThemeMode.dark);
+    await capture(tester, 'dark-cadastro');
+    for (final label in ['Negócio', 'Família', 'Agenda', 'Resultado']) {
+      await tester.tap(find.widgetWithText(NavigationDestination, label));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+    await capture(tester, 'dark-resultado');
+  });
+  testWidgets('app vazio mostra os primeiros passos', (tester) async {
+    await open(tester, FinanceData());
+    expect(find.text('Vamos começar'), findsOneWidget);
+    expect(find.text('Conhecer o app com exemplos'), findsOneWidget);
+    await capture(tester, 'vazio-mobile');
+  });
+  testWidgets('seletor de mês pula direto para o mês escolhido', (
+    tester,
+  ) async {
+    final data = demoData();
+    data.month('2026-11');
+    await open(tester, data);
+    await tester.tap(find.byTooltip('Escolher mês'));
+    await tester.pumpAndSettle();
+    await capture(tester, 'seletor-mes-mobile');
+    await tester.tap(find.text('Mar'));
+    await tester.pumpAndSettle();
+    expect(find.text('Março de 2026'), findsOneWidget);
+    expect(find.text('Hoje'), findsOneWidget);
+    expect(data.months.keys, containsAll(['2026-10', '2026-11']));
+    expect(data.months.length, 2);
+  });
+  testWidgets('capturas do formulário, resultado e desktop', (tester) async {
+    final data = demoData();
+    data.month('2026-09')
+      ..items.addAll(data.month('2026-10').items)
+      ..spending.add(
+        Spending(
+          id: 's',
+          itemId: 'insumos',
+          description: 'Ração',
+          amount: 400000,
+          date: DateTime(2026, 9, 3),
+        ),
+      );
+    await open(tester, data);
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Resultado'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byType(BalanceChart),
+      300,
+      scrollable: find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await capture(tester, 'mobile-grafico');
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Cadastro'));
+    await tester.pumpAndSettle();
+    final add = find.widgetWithText(OutlinedButton, 'Adicionar renda').first;
+    await tester.tapAt(
+      tester.getTopLeft(add) + Offset(24, tester.getSize(add).height / 2),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsOneWidget);
+    await capture(tester, 'form-mobile');
+    await tester.tap(find.byTooltip('Cancelar'));
+    await tester.pumpAndSettle();
+    await open(tester, demoData(), size: const Size(1440, 1000));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Negócio'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await capture(tester, 'desktop-negocio');
     expect(tester.takeException(), isNull);
   });
 }

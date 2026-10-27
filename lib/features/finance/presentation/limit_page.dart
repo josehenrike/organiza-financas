@@ -24,31 +24,46 @@ class _LimitPageState extends State<LimitPage> {
   final description = TextEditingController();
   final amount = TextEditingController();
   final form = GlobalKey<FormState>();
+  final scroll = ScrollController();
   bool voice = false, listening = false, busy = false;
   String? voiceMessage;
-  late DateTime date;
-  @override
-  void initState() {
-    super.initState();
+
+  /// Gasto em edição; nulo ao registrar um novo.
+  Spending? editing;
+  late DateTime date = defaultDate;
+
+  DateTime get defaultDate {
     final now = DateTime.now();
-    date = monthKey(now) == widget.month.key
+    return monthKey(now) == widget.month.key
         ? DateTime(now.year, now.month, now.day)
         : widget.month.date;
   }
 
   @override
   void dispose() {
+    speech.statusListener = null;
+    speech.errorListener = null;
     speech.cancel();
     description.dispose();
     amount.dispose();
+    scroll.dispose();
     super.dispose();
+  }
+
+  void stopped(String message) {
+    if (mounted && listening) {
+      setState(() {
+        listening = false;
+        voiceMessage = message;
+      });
+    }
   }
 
   Future<void> listen() async {
     try {
       if (listening) {
         await speech.stop();
-        if (mounted) setState(() => listening = false);
+        stopped('Confira e corrija os campos antes de salvar.');
         return;
       }
       final available = await speech.initialize();
@@ -56,19 +71,32 @@ class _LimitPageState extends State<LimitPage> {
       if (!available) {
         setState(
           () => voiceMessage =
-              'Voz indisponível. Você pode digitar nos campos abaixo.',
+              'Voz indisponível neste aparelho. Você pode digitar nos campos abaixo.',
         );
         return;
       }
+      speech.statusListener = (status) {
+        if (status == SpeechToText.doneStatus ||
+            status == SpeechToText.notListeningStatus) {
+          stopped(
+            voice
+                ? 'Confira e corrija os campos antes de salvar.'
+                : 'Não entendi. Toque para falar de novo ou digite.',
+          );
+        }
+      };
+      speech.errorListener = (_) =>
+          stopped('Não foi possível ouvir. Tente de novo ou digite.');
       setState(() {
         listening = true;
         voiceMessage =
-            'Estou ouvindo. Diga o valor em números e com o que gastou.';
+            'Estou ouvindo… Diga o valor e com o que gastou, como “gastei 50 na padaria”.';
       });
       await speech.listen(
         listenOptions: SpeechListenOptions(
           localeId: 'pt_BR',
           listenFor: const Duration(seconds: 20),
+          pauseFor: const Duration(seconds: 4),
         ),
         onResult: (r) {
           if (!mounted) return;
@@ -79,21 +107,12 @@ class _LimitPageState extends State<LimitPage> {
                 ? ''
                 : editableMoney(draft.amount!);
             voice = true;
-            if (r.finalResult) {
-              listening = false;
-              voiceMessage = 'Confira e corrija os campos antes de salvar.';
-            }
           });
+          if (r.finalResult) {
+            stopped('Confira e corrija os campos antes de salvar.');
+          }
         },
       );
-      Future<void>.delayed(const Duration(seconds: 22), () {
-        if (mounted && listening) {
-          setState(() {
-            listening = false;
-            voiceMessage = 'Confira os campos ou tente novamente.';
-          });
-        }
-      });
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -105,11 +124,100 @@ class _LimitPageState extends State<LimitPage> {
     }
   }
 
+  void resetForm() {
+    description.clear();
+    amount.clear();
+    voice = false;
+    editing = null;
+    voiceMessage = null;
+    date = defaultDate;
+  }
+
+  void startEditing(Spending s) {
+    setState(() {
+      editing = s;
+      description.text = s.description;
+      amount.text = editableMoney(s.amount);
+      date = s.date;
+      voice = s.voice;
+      voiceMessage = null;
+    });
+    scroll.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  Future<void> submit() async {
+    if (!form.currentState!.validate()) return;
+    final value = parseMoney(amount.text)!;
+    if (voice &&
+        editing == null &&
+        !await confirm(
+          context,
+          'Confirmar gasto',
+          '${description.text.trim()}: ${money(value)} em ${widget.item.name}?',
+          action: 'Salvar',
+        )) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() => busy = true);
+    final month = widget.month;
+    final spending = Spending(
+      id: editing?.id ?? newId(),
+      itemId: widget.item.id,
+      description: description.text.trim(),
+      amount: value,
+      date: date,
+      voice: voice,
+    );
+    final wasEditing = editing != null;
+    if (wasEditing) {
+      month.spending[month.spending.indexOf(editing!)] = spending;
+    } else {
+      month.spending.add(spending);
+    }
+    await widget.onSave();
+    if (!mounted) return;
+    setState(() {
+      resetForm();
+      busy = false;
+    });
+    notify(
+      context,
+      wasEditing ? 'Gasto atualizado.' : 'Gasto de ${money(value)} registrado.',
+    );
+  }
+
+  Future<void> remove(Spending s) async {
+    final month = widget.month;
+    final index = month.spending.indexOf(s);
+    month.spending.removeAt(index);
+    if (editing == s) resetForm();
+    await widget.onSave();
+    if (!mounted) return;
+    setState(() {});
+    notify(
+      context,
+      'Gasto excluído.',
+      action: SnackBarAction(
+        label: 'Desfazer',
+        onPressed: () async {
+          month.spending.insert(min(index, month.spending.length), s);
+          await widget.onSave();
+          if (mounted) setState(() {});
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final item = widget.item, month = widget.month;
-    final used = month.spent(item.id),
-        left = item.amount - month.spent(item.id);
+    final item = widget.item, month = widget.month, c = context.colors;
+    final used = month.spent(item.id), left = item.amount - used;
+    final ratio = used / max(1, item.amount);
     final now = DateTime.now();
     final last = DateTime(month.date.year, month.date.month + 1, 0).day;
     final remaining = monthKey(now) == month.key
@@ -117,40 +225,45 @@ class _LimitPageState extends State<LimitPage> {
         : (month.date.isAfter(now) ? last : 0);
     final history = month.spending.where((s) => s.itemId == item.id).toList()
       ..sort((a, b) => b.date.compareTo(a.date));
+    final suggestions = history.map((s) => s.description).toSet().take(5);
     return Scaffold(
       appBar: AppBar(title: Text(item.name)),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
           child: ListView(
+            controller: scroll,
             padding: const EdgeInsets.all(20),
             children: [
-              Heading(
-                item.name,
-                subtitle:
-                    '${pocketName(item.pocket)} · ${monthTitle(month.date)}',
-              ),
               Panel(
-                color: pocketColor(item.pocket),
+                color: left < 0 ? c.danger : context.pocketFill(item.pocket),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      left < 0 ? 'LIMITE ULTRAPASSADO' : 'SALDO DISPONÍVEL',
+                      '${pocketName(item.pocket)} · ${monthTitle(month.date)}',
                       style: const TextStyle(color: Colors.white70),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     Text(
-                      money(left),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 36,
-                        fontWeight: FontWeight.w800,
+                      left < 0 ? 'Passou do limite em' : 'Ainda pode gastar',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        money(left.abs()),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 38,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     LinearProgressIndicator(
-                      value: (used / max(1, item.amount)).clamp(0, 1),
+                      value: ratio.clamp(0, 1).toDouble(),
                       color: Colors.white,
                       backgroundColor: Colors.white24,
                       minHeight: 8,
@@ -158,24 +271,25 @@ class _LimitPageState extends State<LimitPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Gastou ${money(used)}  •  Limite ${money(item.amount)}',
+                      'Gastou ${money(used)} de ${money(item.amount)} · ${(ratio * 100).round()}%',
                       style: const TextStyle(color: Colors.white),
                     ),
                   ],
                 ),
               ),
-              if (used >= item.amount * .8)
-                Panel(
-                  color: const Color(0xFFFFECCD),
-                  child: Text(
-                    'Atenção: ${(used / max(1, item.amount) * 100).round()}% do limite já foi usado.',
-                  ),
+              if (ratio >= .8 && left >= 0)
+                Notice(
+                  'Atenção: ${(ratio * 100).round()}% do limite já foi usado.',
+                  icon: Icons.warning_amber_rounded,
+                  warning: true,
                 ),
-              if (remaining > 0)
+              if (remaining > 0 && left > 0)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 20),
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 20),
                   child: Text(
-                    'Restam $remaining dias neste mês, contando hoje. Cerca de ${money(max(0, left) ~/ remaining)} por dia.',
+                    'Restam $remaining dias neste mês, contando hoje. '
+                    'Dá cerca de ${money(left ~/ remaining)} por dia.',
+                    style: TextStyle(color: c.muted),
                   ),
                 ),
               Panel(
@@ -185,47 +299,39 @@ class _LimitPageState extends State<LimitPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'Registrar um gasto',
-                        style: Theme.of(context).textTheme.titleLarge,
+                        editing == null ? 'Registrar um gasto' : 'Editar gasto',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      OutlinedButton.icon(
-                        onPressed: listen,
-                        icon: Icon(listening ? Icons.stop : Icons.mic_none),
-                        label: Text(
-                          listening
-                              ? 'Parar de ouvir'
-                              : 'Falar: “gastei 50 na padaria”',
+                      if (editing == null)
+                        OutlinedButton.icon(
+                          onPressed: listen,
+                          style: listening
+                              ? OutlinedButton.styleFrom(
+                                  foregroundColor: c.danger,
+                                  side: BorderSide(color: c.danger, width: 1.4),
+                                )
+                              : null,
+                          icon: Icon(listening ? Icons.stop : Icons.mic_none),
+                          label: Text(
+                            listening ? 'Parar de ouvir' : 'Falar o gasto',
+                          ),
                         ),
-                      ),
                       if (voiceMessage != null)
                         Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Text(voiceMessage!),
-                        ),
-                      if (item.pocket == Pocket.business)
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            for (final label in [
-                              'Ração',
-                              'Remédio e vacina',
-                              'Sal mineral',
-                              'Outro',
-                            ])
-                              ActionChip(
-                                label: Text(label),
-                                onPressed: () => setState(
-                                  () => description.text = label == 'Outro'
-                                      ? ''
-                                      : label,
-                                ),
-                              ),
-                          ],
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            voiceMessage!,
+                            style: TextStyle(color: c.muted, fontSize: 14),
+                          ),
                         ),
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: description,
+                        textCapitalization: TextCapitalization.sentences,
+                        textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
                           labelText: 'Com o quê?',
                           hintText: 'Ex.: mercado',
@@ -234,125 +340,136 @@ class _LimitPageState extends State<LimitPage> {
                             ? 'Informe com o que gastou'
                             : null,
                       ),
+                      if (suggestions.isNotEmpty && editing == null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              for (final label in suggestions)
+                                ActionChip(
+                                  label: Text(label),
+                                  onPressed: () =>
+                                      setState(() => description.text = label),
+                                ),
+                            ],
+                          ),
+                        ),
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: amount,
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
+                        inputFormatters: moneyInput,
                         decoration: const InputDecoration(
-                          labelText: 'Valor (R\$)',
+                          labelText: 'Valor',
+                          prefixText: 'R\$ ',
                         ),
                         validator: positiveMoney,
+                        onFieldSubmitted: (_) => submit(),
                       ),
                       const SizedBox(height: 8),
-                      TextButton.icon(
-                        onPressed: () async {
-                          final selected = await showDatePicker(
-                            context: context,
-                            initialDate: date,
-                            firstDate: month.date,
-                            lastDate: DateTime(
-                              month.date.year,
-                              month.date.month + 1,
-                              0,
-                            ),
-                          );
-                          if (selected != null) {
-                            setState(() => date = selected);
-                          }
-                        },
-                        icon: const Icon(Icons.calendar_today_outlined),
-                        label: Text(DateFormat('dd/MM/yyyy').format(date)),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            final selected = await showDatePicker(
+                              context: context,
+                              initialDate: date,
+                              firstDate: month.date,
+                              lastDate: DateTime(
+                                month.date.year,
+                                month.date.month + 1,
+                                0,
+                              ),
+                            );
+                            if (selected != null) {
+                              setState(() => date = selected);
+                            }
+                          },
+                          icon: const Icon(Icons.calendar_today_outlined),
+                          label: Text(
+                            'Dia ${DateFormat('dd/MM/yyyy').format(date)}',
+                          ),
+                        ),
                       ),
+                      const SizedBox(height: 8),
                       FilledButton(
-                        onPressed: busy
-                            ? null
-                            : () async {
-                                if (!form.currentState!.validate()) {
-                                  return;
-                                }
-                                if (voice &&
-                                    !await confirm(
-                                      context,
-                                      'Confirmar gasto',
-                                      '${description.text}: ${money(parseMoney(amount.text)!)} em ${item.name}?',
-                                    )) {
-                                  return;
-                                }
-                                if (!mounted) return;
-                                setState(() => busy = true);
-                                month.spending.add(
-                                  Spending(
-                                    id: newId(),
-                                    itemId: item.id,
-                                    description: description.text.trim(),
-                                    amount: parseMoney(amount.text)!,
-                                    date: date,
-                                    voice: voice,
-                                  ),
-                                );
-                                await widget.onSave();
-                                if (!mounted) return;
-                                setState(() {
-                                  description.clear();
-                                  amount.clear();
-                                  voice = false;
-                                  busy = false;
-                                  voiceMessage = null;
-                                });
-                              },
-                        child: const Text('Salvar gasto'),
+                        onPressed: busy ? null : submit,
+                        child: Text(
+                          editing == null ? 'Salvar gasto' : 'Salvar alteração',
+                        ),
                       ),
+                      if (editing != null)
+                        TextButton(
+                          onPressed: () => setState(resetForm),
+                          child: const Text('Cancelar edição'),
+                        ),
                     ],
                   ),
                 ),
               ),
               Heading(
                 'Gastos registrados',
-                subtitle: '${history.length} lançamento(s)',
+                subtitle: history.isEmpty
+                    ? null
+                    : '${history.length} ${history.length == 1 ? 'lançamento' : 'lançamentos'} · toque para editar',
+                small: true,
               ),
               if (history.isEmpty)
-                const Panel(
-                  child: Text('Nenhum gasto registrado nesta categoria.'),
-                ),
-              for (final s in history)
                 Panel(
-                  child: Row(
+                  child: Text(
+                    'Nenhum gasto registrado nesta categoria ainda.',
+                    style: TextStyle(color: c.muted),
+                  ),
+                ),
+              if (history.isNotEmpty)
+                Panel(
+                  padding: 8,
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              s.description,
+                      for (final s in history) ...[
+                        if (s != history.first) const Divider(indent: 64),
+                        ListTile(
+                          selected: s == editing,
+                          onTap: () => startEditing(s),
+                          leading: CircleAvatar(
+                            backgroundColor: context.pocketTint(item.pocket),
+                            foregroundColor: context.pocketColor(item.pocket),
+                            child: Text(
+                              DateFormat('dd').format(s.date),
                               style: const TextStyle(
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                            Text(
-                              '${DateFormat('dd/MM').format(s.date)}${s.voice ? ' · por voz' : ''}',
-                            ),
-                            Text(money(s.amount)),
-                          ],
+                          ),
+                          title: Text(
+                            s.description,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text(
+                            '${DateFormat("d 'de' MMM", 'pt_BR').format(s.date)}${s.voice ? ' · por voz' : ''}',
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                money(s.amount),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Excluir gasto',
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () => remove(s),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        tooltip: 'Excluir gasto',
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () async {
-                          if (!await confirm(
-                            context,
-                            'Excluir gasto?',
-                            '${s.description}: ${money(s.amount)}',
-                          )) {
-                            return;
-                          }
-                          month.spending.remove(s);
-                          await widget.onSave();
-                          if (mounted) setState(() {});
-                        },
-                      ),
+                      ],
                     ],
                   ),
                 ),

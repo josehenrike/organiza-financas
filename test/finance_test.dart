@@ -85,9 +85,57 @@ void main() {
     expect(parseMoney('50'), 5000);
     expect(parseMoney('-1'), isNull);
     expect(parseMoney('abc'), isNull);
+    expect(parseMoney('1.250'), 125000);
+    expect(parseMoney('1.25'), 125);
     final draft = VoiceDraft.parse('gastei 50 na padaria');
     expect(draft.amount, 5000);
-    expect(draft.description, 'padaria');
-    expect(VoiceDraft.parse('comprei 120 de remédio').description, 'remédio');
+    expect(draft.description, 'Padaria');
+    expect(VoiceDraft.parse('comprei 120 de remédio').description, 'Remédio');
+  });
+  test('voz entende milhar, cifrão, "reais" e preserva palavras', () {
+    final mil = VoiceDraft.parse('gastei 1.250 no mercado');
+    expect(mil.amount, 125000);
+    expect(mil.description, 'Mercado');
+    final cifrao = VoiceDraft.parse('paguei R\$ 35,90 de gás');
+    expect(cifrao.amount, 3590);
+    expect(cifrao.description, 'Gás');
+    expect(VoiceDraft.parse('gastei 80 reais com ração').description, 'Ração');
+    expect(
+      VoiceDraft.parse('gastei 200 combustível').description,
+      'Combustível',
+    );
+    expect(VoiceDraft.parse('gastei 30 doce').description, 'Doce');
+    expect(VoiceDraft.parse('padaria').amount, isNull);
+  });
+  test('rascunho de mês não grava nada até ser usado', () {
+    final d = demoData();
+    final draft = d.preview('2026-12');
+    expect(d.months.keys, ['2026-10']);
+    expect(d.sourceOf('2026-12'), '2026-10');
+    expect(d.sourceOf('2026-10'), isNull);
+    expect(draft.items.firstWhere((i) => i.id == 'pronaf').part, 5);
+    expect(FinanceData().preview('2026-01').items, isEmpty);
+    expect(FinanceData().isEmpty, isTrue);
+    expect(d.isEmpty, isFalse);
+  });
+  test('depósito da reserva é salvo e backups antigos continuam abrindo', () {
+    final d = demoData();
+    d.month('2026-10').reserveDeposited = true;
+    expect(
+      FinanceData.decode(d.encode()).month('2026-10').reserveDeposited,
+      isTrue,
+    );
+    expect(d.month('2026-10').repeat('2026-11').reserveDeposited, isFalse);
+    final old = d.encode().replaceAll(
+      RegExp(r',"reserveDeposited":(true|false)'),
+      '',
+    );
+    expect(old.contains('reserveDeposited'), isFalse);
+    expect(FinanceData.decode(old).month('2026-10').reserveDeposited, isFalse);
+  });
+  test('dias do mês em texto natural', () {
+    expect(daysLabel([5]), 'dia 5');
+    expect(daysLabel([10, 25]), 'dias 10 e 25');
+    expect(daysLabel([3, 10, 17]), 'dias 3, 10 e 17');
   });
 }
