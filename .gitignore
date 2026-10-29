@@ -19,6 +19,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+supabase.json
 android/local.properties
 android/key.properties
 *.jks

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/supabase_config.dart';
 import '../core/theme/app_theme.dart';
+import '../features/auth/presentation/login_page.dart';
 import '../features/finance/data/finance_store.dart';
 import '../features/finance/presentation/finance_home.dart';
 import '../features/finance/presentation/finance_widgets.dart';
@@ -20,22 +23,84 @@ class OrganizaFinancasApp extends StatelessWidget {
       locale: const Locale('pt', 'BR'),
       supportedLocales: const [Locale('pt', 'BR')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      home: const _Startup(),
+      home: SupabaseConfig.configured
+          ? const _AuthGate()
+          : const _MissingConfig(),
     );
   }
 }
 
+/// Mostra o login sem sessão e os dados da conta quando há sessão.
+class _AuthGate extends StatelessWidget {
+  const _AuthGate();
+  @override
+  Widget build(BuildContext context) {
+    final auth = Supabase.instance.client.auth;
+    return StreamBuilder<AuthState>(
+      stream: auth.onAuthStateChange,
+      builder: (context, _) {
+        final user = auth.currentUser;
+        if (user == null) return LoginPage(auth: auth);
+        return _Startup(key: ValueKey(user.id), userId: user.id);
+      },
+    );
+  }
+}
+
+class _MissingConfig extends StatelessWidget {
+  const _MissingConfig();
+  @override
+  Widget build(BuildContext context) => const Scaffold(
+    body: Center(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Text(
+          'Banco de dados não configurado.\n\n'
+          'Copie supabase.example.json para supabase.json, preencha com os '
+          'dados do seu projeto Supabase e rode:\n'
+          'flutter run --dart-define-from-file=supabase.json',
+          textAlign: TextAlign.center,
+        ),
+      ),
+    ),
+  );
+}
+
 class _Startup extends StatefulWidget {
-  const _Startup();
+  const _Startup({super.key, required this.userId});
+  final String userId;
   @override
   State<_Startup> createState() => _StartupState();
 }
 
 class _StartupState extends State<_Startup> {
-  late Future<FinanceStore> future = FinanceStore.open();
+  late final remote = SupabaseFinanceRemote(
+    Supabase.instance.client,
+    widget.userId,
+  );
+  late Future<FinanceStore> future = open();
+
+  Future<FinanceStore> open() =>
+      FinanceStore.open(remote: remote, userId: widget.userId);
+
+  Future<void> signOut(FinanceStore store) async {
+    if (!await confirm(
+      context,
+      'Sair da conta?',
+      store.pendingSync
+          ? 'Algumas alterações ainda não foram enviadas para a nuvem. Elas '
+                'ficam guardadas neste aparelho e serão enviadas quando você '
+                'entrar de novo com internet.'
+          : 'Seus dados continuam salvos na sua conta.',
+      action: 'Sair',
+    )) {
+      return;
+    }
+    await Supabase.instance.client.auth.signOut();
+  }
 
   Future<void> copyRaw() async {
-    final raw = await FinanceStore.readRaw();
+    final raw = await FinanceStore.readRaw(userId: widget.userId);
     await Clipboard.setData(ClipboardData(text: raw ?? ''));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -56,14 +121,22 @@ class _StartupState extends State<_Startup> {
     )) {
       return;
     }
-    setState(() => future = FinanceStore.startOver());
+    setState(
+      () => future = FinanceStore.startOver(
+        remote: remote,
+        userId: widget.userId,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) => FutureBuilder<FinanceStore>(
     future: future,
     builder: (context, snapshot) {
-      if (snapshot.hasData) return FinanceHome(store: snapshot.data!);
+      if (snapshot.hasData) {
+        final store = snapshot.data!;
+        return FinanceHome(store: store, onSignOut: () => signOut(store));
+      }
       return Scaffold(
         body: Center(
           child: Padding(
@@ -84,8 +157,7 @@ class _StartupState extends State<_Startup> {
                         ),
                         const SizedBox(height: 24),
                         FilledButton(
-                          onPressed: () =>
-                              setState(() => future = FinanceStore.open()),
+                          onPressed: () => setState(() => future = open()),
                           child: const Text('Tentar novamente'),
                         ),
                         const SizedBox(height: 8),

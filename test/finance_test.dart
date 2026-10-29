@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:organiza_financas/features/finance/data/demo_data.dart';
+import 'demo_data.dart';
 import 'package:organiza_financas/features/finance/domain/finance.dart';
 
 void main() {
@@ -18,13 +18,31 @@ void main() {
     expect(m.spent('alimentacao'), 64000);
     expect(m.spent('insumos'), 185000);
   });
-  test('retirada tem uma única confirmação nos dois bolsos', () {
-    final m = MonthPlan(key: '2026-10', withdrawal: 250000);
-    expect(m.income(Pocket.family, actual: true), 0);
-    m.paid.add('withdrawal');
-    expect(m.income(Pocket.family, actual: true), 250000);
+  test('várias retiradas no mês contam como registradas nos dois bolsos', () {
+    final m = MonthPlan(
+      key: '2026-10',
+      withdrawals: [
+        Withdrawal(id: 'a', amount: 5000, day: 3),
+        Withdrawal(id: 'b', amount: 7000, day: 17),
+      ],
+    );
+    expect(m.withdrawal, 12000);
+    expect(m.income(Pocket.family), 12000);
+    expect(m.income(Pocket.family, actual: true), 12000);
+    expect(m.agenda.where((e) => e.transfer).length, 4);
     expect(m.agenda.where((e) => e.transfer).every(m.isPaid), isTrue);
     expect(m.costs(Pocket.business, actual: true), 0);
+  });
+  test('backup antigo com retirada mensal fixa vira uma retirada', () {
+    final old = FinanceData.decode(
+      '{"version":1,"demo":false,"reserveGoal":0,"reserveSaved":0,'
+      '"reserveMonthly":0,"months":{"2026-10":{"key":"2026-10","items":[],'
+      '"spending":[],"paid":["withdrawal"],"withdrawal":250000,'
+      '"withdrawalDay":8,"reserveAllocation":0}}}',
+    ).month('2026-10');
+    expect(old.withdrawal, 250000);
+    expect(old.withdrawals.single.day, 8);
+    expect(old.paid, isEmpty);
   });
   test(
     'repetição avança parcelas e não copia eventuais, pagamentos ou gastos',
@@ -35,7 +53,7 @@ void main() {
       expect(next.items.where((i) => i.group == Group.occasional), isEmpty);
       expect(next.spending, isEmpty);
       expect(next.paid, isEmpty);
-      expect(next.withdrawal, m.withdrawal);
+      expect(next.withdrawals, isEmpty);
       expect(m.repeat('2027-07').items.where((i) => i.id == 'pronaf'), isEmpty);
       expect(m.spending, isNotEmpty);
     },
@@ -115,8 +133,6 @@ void main() {
     expect(d.sourceOf('2026-10'), isNull);
     expect(draft.items.firstWhere((i) => i.id == 'pronaf').part, 5);
     expect(FinanceData().preview('2026-01').items, isEmpty);
-    expect(FinanceData().isEmpty, isTrue);
-    expect(d.isEmpty, isFalse);
   });
   test('depósito da reserva é salvo e backups antigos continuam abrindo', () {
     final d = demoData();

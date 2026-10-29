@@ -306,18 +306,44 @@ class _LimitPageState extends State<LimitPage> {
                       ),
                       const SizedBox(height: 16),
                       if (editing == null)
-                        OutlinedButton.icon(
-                          onPressed: listen,
-                          style: listening
-                              ? OutlinedButton.styleFrom(
-                                  foregroundColor: c.danger,
-                                  side: BorderSide(color: c.danger, width: 1.4),
-                                )
-                              : null,
-                          icon: Icon(listening ? Icons.stop : Icons.mic_none),
-                          label: Text(
-                            listening ? 'Parar de ouvir' : 'Falar o gasto',
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: listen,
+                                style: listening
+                                    ? OutlinedButton.styleFrom(
+                                        foregroundColor: c.danger,
+                                        side: BorderSide(
+                                          color: c.danger,
+                                          width: 1.4,
+                                        ),
+                                      )
+                                    : null,
+                                icon: Icon(
+                                  listening ? Icons.stop : Icons.mic_none,
+                                ),
+                                label: Text(
+                                  listening
+                                      ? 'Parar de ouvir'
+                                      : 'Falar o gasto',
+                                ),
+                              ),
+                            ),
+                            const InfoButton(
+                              title: 'Como falar o gasto',
+                              message:
+                                  'Fale um item por vez: o que comprou e o '
+                                  'valor.\n\n'
+                                  'Exemplos:\n'
+                                  '• “mercado 50”\n'
+                                  '• “ração 120”\n'
+                                  '• “gás 35,90”\n\n'
+                                  'Não precisa dizer “reais”. Para registrar '
+                                  'outro item, toque no microfone de novo.\n\n'
+                                  'Confira os campos antes de salvar.',
+                            ),
+                          ],
                         ),
                       if (voiceMessage != null)
                         Padding(

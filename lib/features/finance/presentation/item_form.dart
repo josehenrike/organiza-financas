@@ -216,14 +216,11 @@ class _ItemFormState extends State<ItemForm> {
             padding: const EdgeInsets.all(20),
             child: fields,
           ),
+          // O diálogo já encolhe acima do teclado; somar o teclado aqui de
+          // novo empurraria os campos para fora da tela.
           bottomNavigationBar: SafeArea(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                8,
-                20,
-                12 + MediaQuery.viewInsetsOf(context).bottom,
-              ),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
               child: FilledButton(
                 onPressed: submit,
                 child: const Text('Salvar'),

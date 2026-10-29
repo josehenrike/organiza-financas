@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/theme/app_theme.dart';
 import '../domain/finance.dart';
 
@@ -95,6 +96,58 @@ class Heading extends StatelessWidget {
 }
 
 /// Título de cartão, com ícone e um valor opcional à direita.
+/// Versão instalada, como "Versão 1.1.0 (2)". Fica vazio se não for possível
+/// ler a versão.
+class AppVersion extends StatelessWidget {
+  const AppVersion({super.key, this.prefix = '', this.style});
+  final String prefix;
+  final TextStyle? style;
+  static PackageInfo? _cached;
+  static final _info = PackageInfo.fromPlatform().then((i) => _cached = i);
+  @override
+  Widget build(BuildContext context) => FutureBuilder<PackageInfo>(
+    future: _info,
+    initialData: _cached,
+    builder: (context, snapshot) {
+      final info = snapshot.data;
+      if (info == null) return const SizedBox.shrink();
+      return Text(
+        '${prefix}Versão ${info.version} (${info.buildNumber})',
+        textAlign: TextAlign.center,
+        style: style ?? TextStyle(fontSize: 12, color: context.colors.muted),
+      );
+    },
+  );
+}
+
+/// Ícone "i" que explica uma funcionalidade ao ser tocado.
+class InfoButton extends StatelessWidget {
+  const InfoButton({super.key, required this.title, required this.message});
+  final String title, message;
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: 'Saiba mais: $title',
+    icon: const Icon(Icons.info_outline),
+    color: context.colors.muted,
+    onPressed: () => showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        // Textos longos rolam em telas pequenas ou com fonte ampliada.
+        scrollable: true,
+        icon: const Icon(Icons.info_outline),
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Entendi'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class CardTitle extends StatelessWidget {
   const CardTitle(
     this.title, {
@@ -102,11 +155,15 @@ class CardTitle extends StatelessWidget {
     required this.icon,
     this.color,
     this.trailing,
+    this.info,
   });
   final String title;
   final IconData icon;
   final Color? color;
   final String? trailing;
+
+  /// Explicação mostrada ao tocar no ícone "i" ao lado do título.
+  final String? info;
   @override
   Widget build(BuildContext context) {
     final c = color ?? context.colors.business;
@@ -132,6 +189,7 @@ class CardTitle extends StatelessWidget {
           const SizedBox(width: 8),
           Text(trailing!, style: style),
         ],
+        if (info != null) InfoButton(title: title, message: info!),
       ],
     );
   }

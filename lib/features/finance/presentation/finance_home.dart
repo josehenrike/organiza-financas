@@ -1,10 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
-import '../data/demo_data.dart';
 import '../data/finance_store.dart';
 import '../domain/finance.dart';
 import 'finance_widgets.dart';
@@ -37,8 +35,9 @@ const _emptyHints = {
 };
 
 class FinanceHome extends StatefulWidget {
-  const FinanceHome({super.key, required this.store});
+  const FinanceHome({super.key, required this.store, this.onSignOut});
   final FinanceStore store;
+  final VoidCallback? onSignOut;
   @override
   State<FinanceHome> createState() => _FinanceHomeState();
 }
@@ -50,9 +49,6 @@ class _FinanceHomeState extends State<FinanceHome> {
   bool actual = false;
   String? saveError;
   final scroll = ScrollController();
-
-  /// O botão flutuante encolhe ao rolar para baixo, para não cobrir o conteúdo.
-  bool fabExtended = true;
 
   /// Mês exibido que ainda não foi gravado. Só passa a existir nos dados
   /// quando o usuário altera algo, então navegar não cria meses.
@@ -74,7 +70,18 @@ class _FinanceHomeState extends State<FinanceHome> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    widget.store.addListener(_storeChanged);
+  }
+
+  void _storeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    widget.store.removeListener(_storeChanged);
     scroll.dispose();
     super.dispose();
   }
@@ -97,10 +104,7 @@ class _FinanceHomeState extends State<FinanceHome> {
   }
 
   void go(int index) {
-    setState(() {
-      tab = index;
-      fabExtended = true;
-    });
+    setState(() => tab = index);
     if (scroll.hasClients) scroll.jumpTo(0);
   }
 
@@ -200,30 +204,6 @@ class _FinanceHomeState extends State<FinanceHome> {
             Icon(Icons.spa_outlined, color: tab == 2 ? c.family : c.business),
             const SizedBox(width: 10),
             const Flexible(child: Text('Organiza Finanças')),
-            if (data.demo) ...[
-              const SizedBox(width: 10),
-              Tooltip(
-                message: 'Valores fictícios. Saia pelo menu de opções.',
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: c.warningSurface,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Demonstração',
-                    style: TextStyle(
-                      color: c.onWarningSurface,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
         bottom: PreferredSize(
@@ -231,23 +211,17 @@ class _FinanceHomeState extends State<FinanceHome> {
           child: monthBar(),
         ),
         actions: [
-          PopupMenuButton<String>(
-            tooltip: 'Opções e cópia de segurança',
-            onSelected: options,
-            itemBuilder: (_) => [
-              menuItem('backup', Icons.copy_outlined, 'Copiar backup'),
-              menuItem('restore', Icons.restore, 'Restaurar backup'),
-              if (data.isEmpty)
-                menuItem('demo', Icons.school_outlined, 'Explorar exemplo'),
-              if (data.demo)
-                menuItem('clearDemo', Icons.logout, 'Sair da demonstração'),
-            ],
-          ),
+          if (widget.onSignOut != null)
+            IconButton(
+              tooltip: 'Sair da conta',
+              onPressed: widget.onSignOut,
+              icon: const Icon(Icons.logout),
+            ),
         ],
       ),
+      // Sempre com o texto visível, para o botão nunca mudar de forma.
       floatingActionButton: FloatingActionButton.extended(
         onPressed: quickSpend,
-        isExtended: fabExtended,
         tooltip: 'Registrar gasto',
         icon: const Icon(Icons.add),
         label: const Text('Registrar gasto'),
@@ -284,78 +258,87 @@ class _FinanceHomeState extends State<FinanceHome> {
                         child: const Text('Tentar novamente'),
                       ),
                     ],
+                  )
+                else if (widget.store.pendingSync)
+                  MaterialBanner(
+                    backgroundColor: c.warningSurface,
+                    leading: Icon(Icons.cloud_off_outlined, color: c.muted),
+                    content: const Text(
+                      'Sem conexão com a nuvem. Suas alterações estão guardadas '
+                      'neste aparelho e serão enviadas quando houver internet.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: save,
+                        child: const Text('Enviar agora'),
+                      ),
+                    ],
                   ),
                 Expanded(
-                  child: NotificationListener<UserScrollNotification>(
-                    onNotification: (n) {
-                      final extend =
-                          n.direction == ScrollDirection.forward ||
-                          n.metrics.pixels <= 0;
-                      if (n.direction != ScrollDirection.idle &&
-                          extend != fabExtended) {
-                        setState(() => fabExtended = extend);
-                      }
-                      return false;
-                    },
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1040),
-                        child: ListView(
-                          controller: scroll,
-                          padding: EdgeInsets.fromLTRB(
-                            wide ? 32 : 16,
-                            wide ? 32 : 20,
-                            wide ? 32 : 16,
-                            24,
-                          ),
-                          children: [
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 200),
-                              layoutBuilder: (current, previous) => Stack(
-                                alignment: Alignment.topCenter,
-                                children: [...previous, ?current],
-                              ),
-                              child: Column(
-                                key: ValueKey('$tab ${month.key}'),
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (source != null)
-                                    Notice(
-                                      'Mês ainda não iniciado. Mostrando o planejamento '
-                                      'repetido de ${monthTitle(data.months[source]!.date).toLowerCase()}, '
-                                      'com parcelas avançadas. Ele é salvo na primeira alteração.',
-                                      icon: Icons.auto_awesome_outlined,
-                                    ),
-                                  ...content,
-                                ],
-                              ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1040),
+                      child: ListView(
+                        controller: scroll,
+                        padding: EdgeInsets.fromLTRB(
+                          wide ? 32 : 16,
+                          wide ? 32 : 20,
+                          wide ? 32 : 16,
+                          24,
+                        ),
+                        children: [
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            layoutBuilder: (current, previous) => Stack(
+                              alignment: Alignment.topCenter,
+                              children: [...previous, ?current],
                             ),
-                            const SizedBox(height: 32),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            child: Column(
+                              key: ValueKey('$tab ${month.key}'),
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Icon(
-                                  Icons.phone_android,
-                                  size: 16,
-                                  color: c.muted,
-                                ),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    'Dados neste dispositivo • Sem sincronização em nuvem',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: c.muted,
-                                    ),
+                                if (source != null)
+                                  Notice(
+                                    'Mês ainda não iniciado. Mostrando o planejamento '
+                                    'repetido de ${monthTitle(data.months[source]!.date).toLowerCase()}, '
+                                    'com parcelas avançadas. Ele é salvo na primeira alteração.',
+                                    icon: Icons.auto_awesome_outlined,
                                   ),
-                                ),
+                                ...content,
                               ],
                             ),
-                            // Espaço para o botão flutuante não cobrir o fim.
-                            const SizedBox(height: 88),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 32),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                widget.store.remote == null
+                                    ? Icons.phone_android
+                                    : Icons.cloud_done_outlined,
+                                size: 16,
+                                color: c.muted,
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  widget.store.remote == null
+                                      ? 'Dados neste dispositivo'
+                                      : 'Dados salvos na sua conta',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: c.muted,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          const AppVersion(),
+                          // Espaço para o botão flutuante não cobrir o fim.
+                          const SizedBox(height: 88),
+                        ],
                       ),
                     ),
                   ),
@@ -583,7 +566,6 @@ class _FinanceHomeState extends State<FinanceHome> {
         m.items.any((i) => i.group == Group.income),
         null as VoidCallback?,
       ),
-      ('Combine a retirada da família', m.withdrawal > 0, editWithdrawal),
       ('Defina a reserva do negócio', data.reserveGoal > 0, editReserve),
       (
         'Planeje os gastos do mês',
@@ -666,15 +648,6 @@ class _FinanceHomeState extends State<FinanceHome> {
                     ),
                   ),
                 ),
-              if (data.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: TextButton.icon(
-                    onPressed: () => options('demo'),
-                    icon: const Icon(Icons.school_outlined),
-                    label: const Text('Conhecer o app com exemplos'),
-                  ),
-                ),
             ],
           ),
         ),
@@ -702,10 +675,19 @@ class _FinanceHomeState extends State<FinanceHome> {
             'A ponte entre a roça e a casa',
             icon: Icons.swap_horiz,
             color: c.family,
+            info:
+                'A retirada é o dinheiro que sai do caixa do negócio para as '
+                'despesas da casa.\n\n'
+                'Registre cada vez que tirar dinheiro, mesmo valores pequenos e '
+                'em dias diferentes. O total do mês entra como renda da família '
+                'e sai do resultado do negócio.\n\n'
+                'As retiradas não se repetem sozinhas no mês seguinte. Para '
+                'corrigir ou excluir, toque na retirada ou no menu ao lado dela.',
           ),
           const SizedBox(height: 12),
           Text(
-            'A retirada sai do caixa do negócio e entra automaticamente como renda da família.',
+            'Cada retirada sai do caixa do negócio e entra como renda da família. '
+            'Registre quantas precisar, no dia em que tirar o dinheiro.',
             style: TextStyle(color: c.muted),
           ),
           const SizedBox(height: 16),
@@ -713,17 +695,22 @@ class _FinanceHomeState extends State<FinanceHome> {
             money(m.withdrawal),
             style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
           ),
-          Text(
-            m.withdrawal == 0
-                ? 'Ainda não combinada'
-                : 'Todo dia ${m.withdrawalDay}',
-            style: TextStyle(color: c.muted),
-          ),
+          Text(withdrawalsLabel(m), style: TextStyle(color: c.muted)),
+          for (final w in [
+            ...m.withdrawals,
+          ]..sort((a, b) => a.day.compareTo(b.day)))
+            itemRow(
+              title: 'Dia ${w.day}',
+              subtitle: 'Retirada para a casa',
+              amount: w.amount,
+              onTap: () => editWithdrawal(w),
+              menu: withdrawalMenu(w),
+            ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: editWithdrawal,
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('Combinar retirada'),
+            icon: const Icon(Icons.add),
+            label: const Text('Registrar retirada'),
           ),
         ],
       ),
@@ -876,13 +863,17 @@ class _FinanceHomeState extends State<FinanceHome> {
           const SizedBox(height: 8),
           if (familyIncome)
             itemRow(
-              title: 'Retirada do negócio',
-              subtitle: m.withdrawal == 0
-                  ? 'Toque para combinar'
-                  : 'Todo dia ${m.withdrawalDay} · transferência do negócio',
+              title: 'Retiradas do negócio',
+              subtitle: m.withdrawals.isEmpty
+                  ? 'Toque para registrar'
+                  : '${withdrawalsLabel(m)} · toque para registrar outra',
               amount: m.withdrawal,
               onTap: editWithdrawal,
               leading: Icons.swap_horiz,
+              menu: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Icon(Icons.add_circle_outline, size: 20, color: c.muted),
+              ),
             ),
           if (items.isEmpty && !familyIncome)
             Padding(
@@ -1067,7 +1058,19 @@ class _FinanceHomeState extends State<FinanceHome> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const CardTitle('Reserva do negócio', icon: Icons.savings_outlined),
+          const CardTitle(
+            'Reserva do negócio',
+            icon: Icons.savings_outlined,
+            info:
+                'A reserva é um dinheiro guardado para a roça não parar em um '
+                'imprevisto, como quebra de máquina ou safra ruim.\n\n'
+                'Meta: quanto você quer ter guardado.\n'
+                'Já guardado: quanto já tem hoje.\n'
+                'Quanto guardar por mês: o valor que pretende separar.\n'
+                'Separar neste mês: o que sai do caixa do negócio neste mês.\n\n'
+                'Depois de depositar, toque em “Já guardei” para somar ao '
+                'guardado.',
+          ),
           const SizedBox(height: 8),
           Text(
             'Um dinheiro guardado para a roça não parar.',
@@ -1346,7 +1349,7 @@ class _FinanceHomeState extends State<FinanceHome> {
   Widget agendaRow(AgendaEntry e) {
     final c = context.colors;
     final m = month;
-    final paid = m.isPaid(e), spend = e.id.startsWith('spend:');
+    final paid = m.isPaid(e), spend = MonthPlan.isRegistered(e);
     final late = overdue(e);
     void toggle() {
       paid ? m.paid.remove(e.id) : m.paid.add(e.id);
@@ -1442,9 +1445,7 @@ class _FinanceHomeState extends State<FinanceHome> {
     final b = m.balance(Pocket.business, actual: actual),
         f = m.balance(Pocket.family, actual: actual);
     final income = m.income(Pocket.business, actual: actual);
-    final withdrawal = actual && !m.paid.contains('withdrawal')
-        ? 0
-        : m.withdrawal;
+    final withdrawal = m.withdrawal;
     final reserve = actual && !m.reserveDeposited ? 0 : m.reserveAllocation;
     final history = {
       ...data.months.keys.where((k) => k.compareTo(m.key) <= 0),
@@ -1668,32 +1669,66 @@ class _FinanceHomeState extends State<FinanceHome> {
     if (picked is Pocket) await edit(picked, Group.variable);
   }
 
-  Future<void> editWithdrawal() async {
+  String withdrawalsLabel(MonthPlan m) => switch (m.withdrawals.length) {
+    0 => 'Nenhuma retirada neste mês',
+    1 => '1 retirada neste mês',
+    final n => '$n retiradas neste mês',
+  };
+
+  Widget withdrawalMenu(Withdrawal w) => PopupMenuButton<String>(
+    tooltip: 'Opções da retirada do dia ${w.day}',
+    onSelected: (v) => v == 'edit' ? editWithdrawal(w) : deleteWithdrawal(w),
+    itemBuilder: (_) => [
+      menuItem('edit', Icons.edit_outlined, 'Editar'),
+      menuItem('delete', Icons.delete_outline, 'Excluir'),
+    ],
+  );
+
+  /// Registra uma nova retirada ou corrige uma já registrada.
+  Future<void> editWithdrawal([Withdrawal? old]) async {
     final m = month;
+    final now = DateTime.now();
+    final day = old?.day ?? (m.key == monthKey(now) ? now.day : 1);
     final values = await numberForm(
-      'Retirada da família',
-      ['Valor mensal', 'Dia do mês'],
-      [editableMoney(m.withdrawal), '${m.withdrawalDay}'],
+      old == null ? 'Registrar retirada' : 'Editar retirada',
+      ['Valor', 'Dia do mês'],
+      [old == null ? '' : editableMoney(old.amount), '$day'],
       dayIndex: 1,
-      help: 'Quanto o negócio passa para a casa todo mês.',
+      help:
+          'Quanto saiu do negócio para a casa. Pode registrar várias no mesmo mês.',
+      positive: true,
     );
     if (values == null) return;
-    final amount = parseMoney(values[0])!, day = int.parse(values[1]);
-    if ((amount != m.withdrawal || day != m.withdrawalDay) &&
-        m.paid.contains('withdrawal')) {
-      if (!mounted ||
-          !await confirm(
-            context,
-            'Atualizar retirada?',
-            'A retirada será desmarcada na agenda para você conferir o novo valor e dia.',
-          )) {
-        return;
-      }
-      m.paid.remove('withdrawal');
+    final w = Withdrawal(
+      id: old?.id ?? newId(),
+      amount: parseMoney(values[0])!,
+      day: int.parse(values[1]),
+    );
+    if (old == null) {
+      m.withdrawals.add(w);
+    } else {
+      m.withdrawals[m.withdrawals.indexOf(old)] = w;
     }
-    m.withdrawal = amount;
-    m.withdrawalDay = day;
     await save();
+  }
+
+  Future<void> deleteWithdrawal(Withdrawal w) async {
+    final m = month;
+    final index = m.withdrawals.indexOf(w);
+    m.withdrawals.remove(w);
+    await save();
+    if (!mounted) return;
+    notify(
+      context,
+      'Retirada de ${money(w.amount)} excluída.',
+      action: SnackBarAction(
+        label: 'Desfazer',
+        onPressed: () {
+          m.withdrawals.insert(min(index, m.withdrawals.length), w);
+          save();
+        },
+      ),
+    );
   }
 
   Future<void> editReserve() async {
@@ -1732,6 +1767,7 @@ class _FinanceHomeState extends State<FinanceHome> {
     List<String> initial, {
     int? dayIndex,
     String? help,
+    bool positive = false,
   }) async {
     final controllers = initial
         .map((v) => TextEditingController(text: v))
@@ -1793,6 +1829,8 @@ class _FinanceHomeState extends State<FinanceHome> {
                                       ? 'Use um dia entre 1 e 31'
                                       : null;
                                 }
+                              : positive
+                              ? positiveMoney
                               : nonNegativeMoney,
                         ),
                       ),
@@ -1885,121 +1923,5 @@ class _FinanceHomeState extends State<FinanceHome> {
       ),
     );
     if (result == true) await edit(p, g);
-  }
-
-  Future<void> options(String option) async {
-    if (option == 'demo') {
-      if (!await confirm(
-        context,
-        'Explorar demonstração?',
-        'Carregar valores fictícios de outubro de 2026? Você pode sair da demonstração pelo menu.',
-        action: 'Explorar',
-      )) {
-        return;
-      }
-      widget.store.data = demoData();
-      selected = DateTime(2026, 10);
-      await save();
-      return;
-    }
-    if (option == 'clearDemo') {
-      if (!await confirm(
-        context,
-        'Sair da demonstração?',
-        'Os exemplos e suas alterações na demonstração serão removidos. O app começará vazio.',
-        action: 'Sair e limpar',
-        destructive: true,
-      )) {
-        return;
-      }
-      widget.store.data = FinanceData();
-      selected = currentMonth;
-      await widget.store.save();
-      if (mounted) setState(() {});
-      return;
-    }
-    if (option == 'backup') {
-      try {
-        await Clipboard.setData(ClipboardData(text: data.encode()));
-        if (mounted) {
-          notify(
-            context,
-            'Backup copiado. Cole em um arquivo ou mensagem e guarde em local seguro.',
-          );
-        }
-      } catch (_) {
-        if (mounted) {
-          notify(context, 'Não foi possível acessar a área de transferência.');
-        }
-      }
-      return;
-    }
-    final controller = TextEditingController();
-    final raw = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Restaurar backup'),
-        content: SizedBox(
-          width: 460,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              TextField(
-                controller: controller,
-                maxLines: 8,
-                decoration: const InputDecoration(
-                  labelText: 'Cole o conteúdo do backup',
-                  alignLabelWithHint: true,
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () async {
-                  final clip = await Clipboard.getData(Clipboard.kTextPlain);
-                  if (clip?.text != null) controller.text = clip!.text!;
-                },
-                icon: const Icon(Icons.content_paste),
-                label: const Text('Colar'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, controller.text),
-            child: const Text('Verificar backup'),
-          ),
-        ],
-      ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    controller.dispose();
-    if (raw == null || !mounted) return;
-    try {
-      final restored = FinanceData.decode(raw.trim());
-      if (!await confirm(
-        context,
-        'Substituir os dados atuais?',
-        'Restaurar ${restored.months.length} mês(es)? Esta ação substitui os registros neste dispositivo.',
-        action: 'Substituir',
-        destructive: true,
-      )) {
-        return;
-      }
-      widget.store.data = restored;
-      await widget.store.save();
-      if (mounted) {
-        setState(() {});
-        notify(context, 'Backup restaurado.');
-      }
-    } catch (_) {
-      if (mounted) {
-        notify(context, 'Backup inválido. Nenhum dado foi substituído.');
-      }
-    }
   }
 }

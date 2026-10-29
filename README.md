@@ -8,8 +8,23 @@ Requer Flutter 3.38+ e Dart 3.10+. Validado com Flutter 3.47.8. Android, iOS e w
 
 ```powershell
 flutter pub get
-flutter run -d chrome
+flutter run -d chrome --dart-define-from-file=supabase.json
 ```
+
+Sem o `supabase.json` o app abre uma tela avisando que o banco de dados não está configurado.
+
+## Banco de dados (Supabase gratuito)
+
+Os dados de cada pessoa ficam na conta dela no Supabase, com login por e-mail e senha. O app também guarda uma cópia no aparelho, então funciona sem internet e envia as alterações quando a conexão volta.
+
+1. Crie uma conta em <https://supabase.com> e um projeto no plano **Free**. Anote a senha do banco.
+2. No painel do projeto, abra **SQL Editor**, cole o conteúdo de `supabase/migrations/20261029000000_finance_data.sql` e clique em **Run**. Isso cria a tabela `finance_data` com RLS: cada usuário só lê e altera os próprios dados.
+3. Em **Project Settings → API Keys**, copie a **Project URL** e a **Publishable key** (`sb_publishable_...`). Nunca use a `secret`/`service_role` no app.
+4. Copie `supabase.example.json` para `supabase.json` (já ignorado pelo Git) e preencha os dois valores.
+5. Em **Authentication → Sign In / Providers → Email**, deixe **Confirm email** ligado para exigir confirmação. O app confirma com um **código** digitado na tela, sem abrir link. Para o e-mail trazer o código, abra **Authentication → Emails → Confirm signup** e substitua o corpo pelo conteúdo de `supabase/templates/confirm_signup.html` (ele usa `{{ .Token }}`). O envio de e-mails do plano gratuito tem limite baixo por hora; para muitos usuários, configure um SMTP próprio em **Authentication → Emails**.
+6. Rode ou compile sempre com `--dart-define-from-file=supabase.json`, por exemplo `flutter build apk --dart-define-from-file=supabase.json`.
+
+Observação: projetos gratuitos são pausados após cerca de uma semana sem acesso; reative pelo painel.
 
 Se o Flutter não estiver no PATH, nesta máquina:
 
@@ -21,7 +36,7 @@ Para Android, configure o Android SDK e um emulador ou dispositivo, execute `flu
 
 ## Funcionalidades
 
-- Primeiros passos guiados (rendas, retirada, reserva e gastos) com progresso.
+- Primeiros passos guiados (rendas, reserva e gastos) com progresso.
 - Cadastro de rendas dos dois bolsos, retirada vinculada e reserva do negócio.
 - Adicionar, editar e excluir (com desfazer) entradas e gastos fixos, parcelados, variáveis e eventuais.
 - Botão **Registrar gasto** em todas as telas: escolha a categoria e lance o gasto em dois toques.
@@ -33,9 +48,11 @@ Para Android, configure o Android SDK e um emulador ou dispositivo, execute `flu
 - Repetição do planejamento do mês anterior mais próximo, com avanço de parcelas. Navegar até um mês novo só mostra um rascunho; ele é gravado na primeira alteração. Não copia pagamentos, gastos variáveis nem eventuais; meses já gravados ficam independentes.
 - Tema claro e escuro, seguindo o sistema. No celular, formulários em tela cheia; no computador, cartões lado a lado.
 - Seletor de mês em grade (toque no nome do mês) e gráfico de colunas do resultado do negócio.
-- Gravação local serializada, aviso de falha, backup JSON pela área de transferência e restauração validada com confirmação. Se os dados salvos não abrirem, o app permite copiá-los ou começar do zero guardando uma cópia.
+- Conta com e-mail e senha no Supabase. Os dados ficam na nuvem e também no aparelho; sem internet, um aviso mostra que há alterações a enviar, com o botão **Enviar agora**. **Sair da conta** fica no topo da tela.
+- No primeiro acesso, dados que já estavam no aparelho (de antes do login) são levados para a conta.
+- Se os dados salvos não abrirem, o app permite copiá-los ou começar do zero guardando uma cópia.
 
-O app inicia vazio. Use **Conhecer o app com exemplos** para explorar outubro de 2026. A demonstração fica identificada. **Sair da demonstração**, no menu, remove os exemplos e alterações feitas neles e permite começar seus registros.
+O app inicia vazio. Os dados de exemplo de outubro de 2026 ficam em `test/demo_data.dart` e são usados só nos testes.
 
 ## Regras de cálculo
 
@@ -49,9 +66,9 @@ A reserva tem saldo guardado e alocação planejada por mês. Depois de transfer
 
 ## Armazenamento e limitações
 
-Os registros ficam neste dispositivo via `SharedPreferencesAsync`, em JSON versionado. O app nativo permite cadastrar e consultar sem internet. Na web, primeiro carregamento e reabertura offline dependem dos recursos do navegador; não há service worker offline configurado.
+Os registros ficam no Supabase e numa cópia local via `SharedPreferencesAsync` (separada por usuário), em JSON versionado. O app nativo permite cadastrar e consultar sem internet. Na web, primeiro carregamento e reabertura offline dependem dos recursos do navegador; não há service worker offline configurado.
 
-**Sincronização em nuvem ainda não implementada.** Ela precisa de backend, contas de usuário e estratégia de conflitos. Não há login, envio automático ou compartilhamento entre dispositivos. Exporte backups pelo menu: limpar os dados do navegador ou desinstalar o app pode remover os registros. Para produção com registros críticos, evoluir este armazenamento de MVP para banco transacional com migrações e backup automático.
+Com conta, cada alteração grava no aparelho e envia o documento inteiro para a tabela `finance_data` do Supabase. Ao abrir, o app baixa a versão da nuvem, a não ser que existam alterações locais ainda não enviadas; nesse caso a versão do aparelho é enviada. Não há mesclagem: se o mesmo usuário editar offline em dois aparelhos ao mesmo tempo, vale a última versão enviada. O plano gratuito do Supabase não inclui backups automáticos diários para download; para registros críticos, considere o plano pago ou exportações periódicas pelo painel.
 
 O reconhecimento de voz depende das permissões e do serviço do sistema/navegador e pode exigir internet. O parser lê valores transcritos em algarismos; números por extenso devem ser corrigidos no formulário. Na web, microfone requer localhost ou HTTPS e navegador compatível. Android/iOS já incluem as declarações de permissão. Referência: https://pub.dev/packages/speech_to_text
 

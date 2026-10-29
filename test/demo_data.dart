@@ -1,15 +1,18 @@
-import '../domain/finance.dart';
+import 'package:organiza_financas/features/finance/domain/finance.dart';
 
 FinanceData demoData() {
   final d = FinanceData(
-    demo: true,
     reserveGoal: 100000,
     reserveSaved: 65000,
     reserveMonthly: 20000,
   );
   final m = MonthPlan(
     key: '2026-10',
-    withdrawal: 250000,
+    withdrawals: [
+      Withdrawal(id: 'retirada-1', amount: 150000, day: 5),
+      Withdrawal(id: 'retirada-2', amount: 60000, day: 12),
+      Withdrawal(id: 'retirada-3', amount: 40000, day: 20),
+    ],
     reserveAllocation: 20000,
   );
   d.months[m.key] = m;

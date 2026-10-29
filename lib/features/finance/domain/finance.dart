@@ -115,6 +115,17 @@ class Spending {
   );
 }
 
+/// Dinheiro que sai do negócio para a casa. Pode acontecer várias vezes no
+/// mês, em valores pequenos, e não se repete nos meses seguintes.
+class Withdrawal {
+  Withdrawal({required this.id, required this.amount, required this.day});
+  final String id;
+  final int amount, day;
+  Map<String, dynamic> toJson() => {'id': id, 'amount': amount, 'day': day};
+  factory Withdrawal.fromJson(Map<String, dynamic> j) =>
+      Withdrawal(id: j['id'], amount: j['amount'], day: j['day']);
+}
+
 class AgendaEntry {
   AgendaEntry(
     this.id,
@@ -137,20 +148,24 @@ class MonthPlan {
     List<PlanItem>? items,
     List<Spending>? spending,
     Set<String>? paid,
-    this.withdrawal = 0,
-    this.withdrawalDay = 5,
+    List<Withdrawal>? withdrawals,
     this.reserveAllocation = 0,
     this.reserveDeposited = false,
   }) : items = items ?? [],
        spending = spending ?? [],
-       paid = paid ?? {};
+       paid = paid ?? {},
+       withdrawals = withdrawals ?? [];
   final String key;
   final List<PlanItem> items;
   final List<Spending> spending;
   final Set<String> paid;
-  int withdrawal, withdrawalDay, reserveAllocation;
+  final List<Withdrawal> withdrawals;
+  int reserveAllocation;
   bool reserveDeposited;
   DateTime get date => DateTime.parse('$key-01');
+
+  /// Soma das retiradas registradas no mês.
+  int get withdrawal => withdrawals.fold(0, (v, w) => v + w.amount);
   int spent(String id) =>
       spending.where((s) => s.itemId == id).fold(0, (v, s) => v + s.amount);
   List<AgendaEntry> get agenda {
@@ -171,16 +186,16 @@ class MonthPlan {
         );
       }
     }
-    for (final p in Pocket.values) {
-      if (withdrawal > 0) {
+    for (final w in withdrawals) {
+      for (final p in Pocket.values) {
         result.add(
           AgendaEntry(
-            'withdrawal',
+            'withdrawal:${w.id}',
             'Retirada para a família',
             p,
             p == Pocket.family,
-            withdrawal,
-            min(withdrawalDay, last),
+            w.amount,
+            min(w.day, last),
             transfer: true,
           ),
         );
@@ -205,8 +220,11 @@ class MonthPlan {
     return result;
   }
 
-  bool isPaid(AgendaEntry e) =>
-      e.id.startsWith('spend:') || paid.contains(e.id);
+  /// Gastos e retiradas são registrados quando acontecem, então já contam
+  /// como pagos.
+  static bool isRegistered(AgendaEntry e) =>
+      e.id.startsWith('spend:') || e.id.startsWith('withdrawal:');
+  bool isPaid(AgendaEntry e) => isRegistered(e) || paid.contains(e.id);
   int income(Pocket p, {bool actual = false}) => agenda
       .where((e) => e.pocket == p && e.income && (!actual || isPaid(e)))
       .fold(0, (v, e) => v + e.amount);
@@ -227,12 +245,7 @@ class MonthPlan {
           ) +
       (p == Pocket.family && g == Group.income ? withdrawal : 0);
   MonthPlan repeat(String nextKey) {
-    final next = MonthPlan(
-      key: nextKey,
-      withdrawal: withdrawal,
-      withdrawalDay: withdrawalDay,
-      reserveAllocation: reserveAllocation,
-    );
+    final next = MonthPlan(key: nextKey, reserveAllocation: reserveAllocation);
     final nextDate = next.date;
     final elapsed =
         (nextDate.year - date.year) * 12 + nextDate.month - date.month;
@@ -253,21 +266,40 @@ class MonthPlan {
     'items': items.map((i) => i.toJson()).toList(),
     'spending': spending.map((s) => s.toJson()).toList(),
     'paid': paid.toList(),
-    'withdrawal': withdrawal,
-    'withdrawalDay': withdrawalDay,
+    'withdrawals': withdrawals.map((w) => w.toJson()).toList(),
     'reserveAllocation': reserveAllocation,
     'reserveDeposited': reserveDeposited,
   };
-  factory MonthPlan.fromJson(Map<String, dynamic> j) => MonthPlan(
-    key: j['key'],
-    items: (j['items'] as List).map((i) => PlanItem.fromJson(i)).toList(),
-    spending: (j['spending'] as List).map((s) => Spending.fromJson(s)).toList(),
-    paid: Set<String>.from(j['paid']),
-    withdrawal: j['withdrawal'],
-    withdrawalDay: j['withdrawalDay'],
-    reserveAllocation: j['reserveAllocation'],
-    reserveDeposited: j['reserveDeposited'] ?? false,
-  );
+  factory MonthPlan.fromJson(Map<String, dynamic> j) {
+    final paid = Set<String>.from(j['paid']);
+    final withdrawals = j['withdrawals'] == null
+        ? <Withdrawal>[]
+        : (j['withdrawals'] as List)
+              .map((w) => Withdrawal.fromJson(w))
+              .toList();
+    // Backups antigos tinham uma única retirada mensal fixa.
+    if (j['withdrawals'] == null && (j['withdrawal'] ?? 0) != 0) {
+      withdrawals.add(
+        Withdrawal(
+          id: 'mensal',
+          amount: j['withdrawal'],
+          day: j['withdrawalDay'] ?? 5,
+        ),
+      );
+    }
+    paid.remove('withdrawal');
+    return MonthPlan(
+      key: j['key'],
+      items: (j['items'] as List).map((i) => PlanItem.fromJson(i)).toList(),
+      spending: (j['spending'] as List)
+          .map((s) => Spending.fromJson(s))
+          .toList(),
+      paid: paid,
+      withdrawals: withdrawals,
+      reserveAllocation: j['reserveAllocation'],
+      reserveDeposited: j['reserveDeposited'] ?? false,
+    );
+  }
 }
 
 class FinanceData {
@@ -276,11 +308,9 @@ class FinanceData {
     this.reserveGoal = 0,
     this.reserveSaved = 0,
     this.reserveMonthly = 0,
-    this.demo = false,
   }) : months = months ?? {};
   final Map<String, MonthPlan> months;
   int reserveGoal, reserveSaved, reserveMonthly;
-  bool demo;
 
   /// Mês salvo ou, se ainda não existe, cria e guarda a partir do anterior.
   MonthPlan month(String key) => months.putIfAbsent(key, () => preview(key));
@@ -305,13 +335,8 @@ class FinanceData {
     return previous.lastOrNull;
   }
 
-  bool get isEmpty =>
-      months.values.every((m) => m.items.isEmpty && m.withdrawal == 0) &&
-      reserveSaved == 0 &&
-      reserveGoal == 0;
   String encode() => jsonEncode({
     'version': 1,
-    'demo': demo,
     'reserveGoal': reserveGoal,
     'reserveSaved': reserveSaved,
     'reserveMonthly': reserveMonthly,
@@ -329,7 +354,6 @@ class FinanceData {
       reserveGoal: j['reserveGoal'],
       reserveSaved: j['reserveSaved'],
       reserveMonthly: j['reserveMonthly'],
-      demo: j['demo'],
     );
     void require(bool condition) {
       if (!condition) throw const FormatException('Dados inválidos no backup');
@@ -346,11 +370,12 @@ class FinanceData {
         RegExp(r'^\d{4}-(0[1-9]|1[0-2])$').hasMatch(entry.key) &&
             m.key == entry.key,
       );
+      require(m.reserveAllocation >= 0);
       require(
-        m.withdrawal >= 0 &&
-            m.withdrawalDay >= 1 &&
-            m.withdrawalDay <= 31 &&
-            m.reserveAllocation >= 0,
+        m.withdrawals.every((w) => w.amount > 0 && w.day >= 1 && w.day <= 31),
+      );
+      require(
+        m.withdrawals.map((w) => w.id).toSet().length == m.withdrawals.length,
       );
       require(m.items.map((i) => i.id).toSet().length == m.items.length);
       require(m.spending.map((s) => s.id).toSet().length == m.spending.length);
