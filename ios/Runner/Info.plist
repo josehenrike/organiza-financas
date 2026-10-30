@@ -6,6 +6,8 @@
 	<string>Use sua voz para preencher um gasto e confirmar antes de salvar.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Transforme sua fala em descrição e valor de um gasto.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

@@ -1,0 +1,67 @@
+# Builds iOS no Codemagic (https://codemagic.io).
+# Variáveis esperadas no grupo "supabase": SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY.
+definitions:
+  scripts:
+    - &criar_supabase_json
+      name: Criar supabase.json a partir das variáveis
+      script: |
+        printf '{\n  "SUPABASE_URL": "%s",\n  "SUPABASE_PUBLISHABLE_KEY": "%s"\n}\n' \
+          "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" > supabase.json
+    - &pub_get
+      name: Baixar dependências
+      script: flutter pub get
+
+workflows:
+  # Só confere se o app compila para iOS. Não precisa de conta Apple e não instala no iPhone.
+  ios-teste:
+    name: iOS - teste de compilação
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - supabase
+    scripts:
+      - *criar_supabase_json
+      - *pub_get
+      - name: Compilar sem assinatura
+        script: flutter build ios --release --no-codesign --dart-define-from-file=supabase.json
+    artifacts:
+      - build/ios/iphoneos/*.app
+
+  # Gera o .ipa assinado e envia para o TestFlight. Precisa da conta Apple Developer.
+  ios-testflight:
+    name: iOS - TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: codemagic
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - supabase
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.josehenrike.organizafinancas
+    scripts:
+      - *criar_supabase_json
+      - *pub_get
+      - name: Aplicar perfis de assinatura
+        script: xcode-project use-profiles
+      - name: Gerar .ipa
+        script: |
+          flutter build ipa --release \
+            --dart-define-from-file=supabase.json \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
