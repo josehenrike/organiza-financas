@@ -230,10 +230,14 @@ abstract final class AppTheme {
         behavior: SnackBarBehavior.floating,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        height: 76,
+        height: 64,
         backgroundColor: colors.panel,
         labelTextStyle: const WidgetStatePropertyAll(
-          TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -.2,
+          ),
         ),
       ),
       navigationRailTheme: NavigationRailThemeData(

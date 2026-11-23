@@ -357,19 +357,24 @@ class _FinanceHomeState extends State<FinanceHome> {
       ),
       bottomNavigationBar: wide
           ? null
-          : NavigationBar(
-              selectedIndex: navigationOrder.indexOf(tab),
-              onDestinationSelected: (index) => go(navigationOrder[index]),
-              destinations: navigationOrder
-                  .map((index) => destinations[index])
-                  .map(
-                    (d) => NavigationDestination(
-                      icon: Icon(d.$2),
-                      selectedIcon: Icon(d.$3),
-                      label: d.$1,
-                    ),
-                  )
-                  .toList(),
+          : DefaultTextStyle.merge(
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              child: NavigationBar(
+                selectedIndex: navigationOrder.indexOf(tab),
+                onDestinationSelected: (index) => go(navigationOrder[index]),
+                destinations: navigationOrder
+                    .map((index) => destinations[index])
+                    .map(
+                      (d) => NavigationDestination(
+                        icon: Icon(d.$2, size: 22),
+                        selectedIcon: Icon(d.$3, size: 22),
+                        label: d.$1,
+                      ),
+                    )
+                    .toList(),
+              ),
             ),
     );
   }
