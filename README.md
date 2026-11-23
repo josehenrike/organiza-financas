@@ -44,7 +44,9 @@ Para Android, configure o Android SDK e um emulador ou dispositivo, execute `flu
 - Voz em português na categoria selecionada, com revisão e confirmação antes de salvar. Entende “1.250”, “R$ 35,90” e “50 reais”. Também funciona digitando.
 - Agenda nos períodos 1–7, 8–14, 15–21 e 22–fim do mês: resumo do que falta pagar e receber, contas atrasadas em destaque, filtros por bolso e toque na linha para marcar pago/recebido.
 - Resultado previsto ou pago/recebido, lucratividade, retirada, reserva, caixa e histórico dos meses.
-- Reserva com botão **Já guardei**, que soma o valor do mês ao saldo guardado (com desfazer).
+- Início com resumo mensal por bolso e atalhos para agenda, cadastros, retiradas e reserva.
+- Campos de valor com máscara em reais: digite os algarismos, incluindo os centavos (123456 vira 1.234,56).
+- Reserva com **Registrar depósito**: vários valores e dias no mês, histórico e exclusão de registros.
 - Repetição do planejamento do mês anterior mais próximo, com avanço de parcelas. Navegar até um mês novo só mostra um rascunho; ele é gravado na primeira alteração. Não copia pagamentos, gastos variáveis nem eventuais; meses já gravados ficam independentes.
 - Tema claro e escuro, seguindo o sistema. No celular, formulários em tela cheia; no computador, cartões lado a lado.
 - Seletor de mês em grade (toque no nome do mês) e gráfico de colunas do resultado do negócio.
@@ -62,7 +64,7 @@ O planejamento usa valores previstos de rendas, fixos, parcelas e eventuais, mai
 
 Rendas com vários dias dividem o valor mensal igualmente entre eles, preservando os centavos. Dias 29–31 são ajustados ao último dia dos meses menores. Feira e ovos da demonstração usam os sábados reais de outubro de 2026. A agenda ilustrativa do PDF não fecha com todos os itens do planejamento; a agenda do app sempre deriva dos registros.
 
-A reserva tem saldo guardado e alocação planejada por mês. Depois de transferir o dinheiro, toque em **Já guardei** para somar a alocação ao saldo; mudar a alocação de um mês já depositado desfaz essa marcação. No resultado “Pago e recebido”, só a reserva marcada como guardada é descontada do caixa.
+A reserva tem saldo guardado e alocação planejada por mês. Depois de transferir o dinheiro, use **Registrar depósito** para informar o valor e o dia. Cada depósito soma ao saldo guardado; a exclusão reverte esse valor. No resultado “Pago e recebido”, são descontados os depósitos registrados. Na previsão, vale o maior entre o planejado e o já depositado, sem duplicar valores. Depósitos não se repetem no mês seguinte. Registros antigos continuam preservados, com indicação de dia não informado.
 
 ## Armazenamento e limitações
 

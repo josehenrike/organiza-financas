@@ -3,6 +3,28 @@ import 'demo_data.dart';
 import 'package:organiza_financas/features/finance/domain/finance.dart';
 
 void main() {
+  test('depósitos preservam histórico e não repetem no próximo mês', () {
+    final m = MonthPlan(
+      key: '2026-11',
+      reserveAllocation: 20000,
+      reserveDeposits: [
+        ReserveDeposit(id: 'a', amount: 10000, day: 2),
+        ReserveDeposit(id: 'b', amount: 20000, day: 9),
+      ],
+    );
+    final data = FinanceData(months: {m.key: m}, reserveSaved: 30000);
+    final restored = FinanceData.decode(data.encode());
+    expect(restored.month(m.key).reserveActual, 30000);
+    expect(restored.month(m.key).reserveForecast, 30000);
+    expect(restored.month(m.key).reserveDeposits.map((d) => d.day), [2, 9]);
+    expect(restored.reserveSaved, 30000);
+    expect(m.repeat('2026-12').reserveActual, 0);
+    expect(m.repeat('2026-12').reserveAllocation, 20000);
+    m.reserveDeposited = true;
+    expect(m.reserveActual, 50000);
+    expect(FinanceData.decode(data.encode()).month(m.key).reserveActual, 50000);
+  });
+
   test('valores do PDF fecham sem duplicar a retirada', () {
     final m = demoData().month('2026-10');
     expect(m.income(Pocket.business), 840000);

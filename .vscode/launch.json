@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Organiza Finanças (Chrome + Supabase)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}",
+      "deviceId": "chrome",
+      "flutterMode": "debug",
+      "toolArgs": [
+        "--dart-define-from-file=supabase.json"
+      ]
+    }
+  ]
+}

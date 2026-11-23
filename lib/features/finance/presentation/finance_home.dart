@@ -43,7 +43,7 @@ class FinanceHome extends StatefulWidget {
 }
 
 class _FinanceHomeState extends State<FinanceHome> {
-  int tab = 0;
+  int tab = 5;
   late DateTime selected = currentMonth;
   Pocket? agendaPocket;
   bool actual = false;
@@ -194,7 +194,8 @@ class _FinanceHomeState extends State<FinanceHome> {
       1 => planning(Pocket.business),
       2 => planning(Pocket.family),
       3 => agenda(),
-      _ => results(),
+      4 => results(),
+      _ => overview(),
     };
     final source = data.sourceOf(month.key);
     return Scaffold(
@@ -211,6 +212,11 @@ class _FinanceHomeState extends State<FinanceHome> {
           child: monthBar(),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Início',
+            onPressed: () => go(5),
+            icon: const Icon(Icons.home_outlined),
+          ),
           if (widget.onSignOut != null)
             IconButton(
               tooltip: 'Sair da conta',
@@ -230,11 +236,12 @@ class _FinanceHomeState extends State<FinanceHome> {
         children: [
           if (wide)
             NavigationRail(
-              selectedIndex: tab,
-              onDestinationSelected: go,
+              selectedIndex: navigationOrder.indexOf(tab),
+              onDestinationSelected: (index) => go(navigationOrder[index]),
               labelType: NavigationRailLabelType.all,
               leading: const SizedBox(height: 12),
-              destinations: destinations
+              destinations: navigationOrder
+                  .map((index) => destinations[index])
                   .map(
                     (d) => NavigationRailDestination(
                       icon: Icon(d.$2),
@@ -351,9 +358,10 @@ class _FinanceHomeState extends State<FinanceHome> {
       bottomNavigationBar: wide
           ? null
           : NavigationBar(
-              selectedIndex: tab,
-              onDestinationSelected: go,
-              destinations: destinations
+              selectedIndex: navigationOrder.indexOf(tab),
+              onDestinationSelected: (index) => go(navigationOrder[index]),
+              destinations: navigationOrder
+                  .map((index) => destinations[index])
                   .map(
                     (d) => NavigationDestination(
                       icon: Icon(d.$2),
@@ -378,12 +386,15 @@ class _FinanceHomeState extends State<FinanceHome> {
         ),
       );
 
+  static const navigationOrder = [0, 1, 2, 5, 3, 4];
+
   static const destinations = [
     ('Cadastro', Icons.edit_note, Icons.edit_note),
     ('Negócio', Icons.agriculture_outlined, Icons.agriculture),
     ('Família', Icons.home_outlined, Icons.home),
     ('Agenda', Icons.calendar_month_outlined, Icons.calendar_month),
     ('Resultado', Icons.bar_chart_outlined, Icons.bar_chart),
+    ('Início', Icons.home_outlined, Icons.home),
   ];
 
   Widget monthBar() {
@@ -557,6 +568,83 @@ class _FinanceHomeState extends State<FinanceHome> {
     );
   }
 
+  List<Widget> overview() {
+    final m = month;
+    Widget pocket(Pocket p) => Panel(
+      onTap: () => go(p == Pocket.business ? 1 : 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CardTitle(
+            pocketName(p),
+            icon: pocketIcon(p),
+            color: context.pocketColor(p),
+          ),
+          const SizedBox(height: 16),
+          resultLine('Entradas previstas', m.income(p)),
+          resultLine('Despesas previstas', -m.costs(p)),
+          if (p == Pocket.business) ...[
+            resultLine('Retiradas para a família', -m.withdrawal),
+            resultLine('Reserva do mês', -m.reserveForecast),
+          ],
+          const Divider(),
+          resultLine(
+            'Saldo previsto',
+            m.balance(p) -
+                (p == Pocket.business ? m.withdrawal + m.reserveForecast : 0),
+            bold: true,
+          ),
+          TextButton(
+            onPressed: () => go(p == Pocket.business ? 1 : 2),
+            child: Text('Abrir ${pocketName(p)}'),
+          ),
+        ],
+      ),
+    );
+    return [
+      const Heading(
+        'Resumo do mês',
+        subtitle:
+            'Veja como estão o negócio e a família e escolha o que fazer.',
+      ),
+      Pair(pocket(Pocket.business), pocket(Pocket.family)),
+      Panel(
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            FilledButton.icon(
+              onPressed: () => go(3),
+              icon: const Icon(Icons.calendar_month),
+              label: const Text('Agenda detalhada'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => go(0),
+              icon: const Icon(Icons.edit_note),
+              label: const Text('Cadastros e rendas'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => go(4),
+              icon: const Icon(Icons.bar_chart),
+              label: const Text('Ver resultado'),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: editWithdrawal,
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('Registrar retirada'),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: deposit,
+              icon: const Icon(Icons.savings_outlined),
+              label: const Text('Registrar depósito'),
+            ),
+          ],
+        ),
+      ),
+      Pair(withdrawalPanel(), reservePanel()),
+    ];
+  }
+
   List<Widget> registration() {
     final c = context.colors;
     final m = month;
@@ -672,7 +760,7 @@ class _FinanceHomeState extends State<FinanceHome> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CardTitle(
-            'A ponte entre a roça e a casa',
+            'Do negócio para a família',
             icon: Icons.swap_horiz,
             color: c.family,
             info:
@@ -728,7 +816,7 @@ class _FinanceHomeState extends State<FinanceHome> {
         subtitle:
             'Valores previstos do mês, mais os gastos variáveis já registrados.',
       ),
-      if (p == Pocket.business && (m.withdrawal > 0 || m.reserveAllocation > 0))
+      if (p == Pocket.business && (m.withdrawal > 0 || m.reserveForecast > 0))
         Pair(
           Summary(
             income: m.income(p),
@@ -740,11 +828,11 @@ class _FinanceHomeState extends State<FinanceHome> {
               children: [
                 resultLine('Resultado do negócio', m.balance(p)),
                 resultLine('Retirada para a família', -m.withdrawal),
-                resultLine('Reserva planejada', -m.reserveAllocation),
+                resultLine('Reserva do mês', -m.reserveForecast),
                 const Divider(height: 16),
                 resultLine(
                   'Fica no caixa',
-                  m.balance(p) - m.withdrawal - m.reserveAllocation,
+                  m.balance(p) - m.withdrawal - m.reserveForecast,
                   bold: true,
                 ),
               ],
@@ -757,6 +845,24 @@ class _FinanceHomeState extends State<FinanceHome> {
           costs: m.costs(p),
           color: context.pocketFill(p),
         ),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          FilledButton.tonalIcon(
+            onPressed: editWithdrawal,
+            icon: const Icon(Icons.swap_horiz),
+            label: const Text('Registrar retirada'),
+          ),
+          if (p == Pocket.business)
+            FilledButton.tonalIcon(
+              onPressed: deposit,
+              icon: const Icon(Icons.savings_outlined),
+              label: const Text('Registrar depósito'),
+            ),
+        ],
+      ),
+      const SizedBox(height: 16),
       if (tracked.isNotEmpty) ...[
         const Heading(
           'De olho nos limites',
@@ -832,7 +938,7 @@ class _FinanceHomeState extends State<FinanceHome> {
   }
 
   Color groupColor(Pocket p, Group g) => switch (g) {
-    Group.income => context.pocketColor(p),
+    Group.income => context.colors.business,
     Group.fixed || Group.installment => context.colors.danger,
     _ => context.colors.warning,
   };
@@ -843,6 +949,10 @@ class _FinanceHomeState extends State<FinanceHome> {
     final items = m.items.where((i) => i.pocket == p && i.group == g).toList();
     final familyIncome = p == Pocket.family && g == Group.income;
     return Panel(
+      color: Color.alphaBlend(
+        (g == Group.income ? c.business : c.danger).withValues(alpha: .08),
+        c.panel,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1068,8 +1178,8 @@ class _FinanceHomeState extends State<FinanceHome> {
                 'Já guardado: quanto já tem hoje.\n'
                 'Quanto guardar por mês: o valor que pretende separar.\n'
                 'Separar neste mês: o que sai do caixa do negócio neste mês.\n\n'
-                'Depois de depositar, toque em “Já guardei” para somar ao '
-                'guardado.',
+                'Use Registrar depósito para informar quanto guardou e em qual dia. '
+                'Você pode registrar vários depósitos no mesmo mês.',
           ),
           const SizedBox(height: 8),
           Text(
@@ -1111,7 +1221,7 @@ class _FinanceHomeState extends State<FinanceHome> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Depósito de ${money(m.reserveAllocation)} deste mês registrado.',
+                      'Depósito anterior: ${money(m.reserveAllocation)} (dia não informado).',
                     ),
                   ),
                   TextButton(
@@ -1134,16 +1244,38 @@ class _FinanceHomeState extends State<FinanceHome> {
               OutlinedButton.icon(
                 onPressed: editReserve,
                 icon: const Icon(Icons.edit_outlined),
-                label: const Text('Ajustar reserva'),
+                label: const Text('Ajustar meta e planejamento'),
               ),
-              if (m.reserveAllocation > 0 && !m.reserveDeposited)
-                FilledButton.tonalIcon(
-                  onPressed: deposit,
-                  icon: const Icon(Icons.savings),
-                  label: const Text('Já guardei'),
-                ),
+              FilledButton.tonalIcon(
+                onPressed: deposit,
+                icon: const Icon(Icons.savings),
+                label: const Text('Registrar depósito'),
+              ),
             ],
           ),
+          const SizedBox(height: 12),
+          Text(
+            'Guardado neste mês: ${money(m.reserveActual)}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          for (final d in ([
+            ...m.reserveDeposits,
+          ]..sort((a, b) => a.day.compareTo(b.day))))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.savings_outlined),
+              title: Text(money(d.amount)),
+              subtitle: Text(
+                DateFormat(
+                  'dd/MM/yyyy',
+                ).format(DateTime(m.date.year, m.date.month, d.day)),
+              ),
+              trailing: IconButton(
+                tooltip: 'Excluir depósito',
+                onPressed: () => deleteDeposit(d),
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ),
         ],
       ),
     );
@@ -1151,12 +1283,41 @@ class _FinanceHomeState extends State<FinanceHome> {
 
   Future<void> deposit() async {
     final m = month;
-    data.reserveSaved += m.reserveAllocation;
-    m.reserveDeposited = true;
+    final now = DateTime.now();
+    final values = await numberForm(
+      'Registrar depósito',
+      ['Valor guardado', 'Dia do mês'],
+      ['', '${m.key == monthKey(now) ? now.day : 1}'],
+      dayIndex: 1,
+      positive: true,
+      help:
+          'Informe apenas este depósito em ${monthTitle(m.date)}. Ele sai do caixa do negócio e soma à reserva.',
+    );
+    if (values == null) return;
+    final d = ReserveDeposit(
+      id: newId(),
+      amount: parseMoney(values[0])!,
+      day: int.parse(values[1]),
+    );
+    m.reserveDeposits.add(d);
+    data.reserveSaved += d.amount;
     await save();
-    if (mounted) {
-      notify(context, '${money(m.reserveAllocation)} somados ao guardado.');
+  }
+
+  Future<void> deleteDeposit(ReserveDeposit d) async {
+    final m = month;
+    if (!await confirm(
+      context,
+      'Excluir depósito?',
+      'Remover ${money(d.amount)} da reserva e devolver ao caixa do mês?',
+      action: 'Excluir',
+      destructive: true,
+    )) {
+      return;
     }
+    m.reserveDeposits.remove(d);
+    data.reserveSaved = max(0, data.reserveSaved - d.amount);
+    await save();
   }
 
   Future<void> undoDeposit() async {
@@ -1232,7 +1393,9 @@ class _FinanceHomeState extends State<FinanceHome> {
         child: Row(
           children: [
             stat('A receber', money(toReceive), c.business),
+            const SizedBox(width: 20),
             stat('A pagar', money(toPay), c.danger),
+            const SizedBox(width: 20),
             stat('Atrasados', '$late', late > 0 ? c.danger : c.muted),
           ],
         ),
@@ -1446,7 +1609,7 @@ class _FinanceHomeState extends State<FinanceHome> {
         f = m.balance(Pocket.family, actual: actual);
     final income = m.income(Pocket.business, actual: actual);
     final withdrawal = m.withdrawal;
-    final reserve = actual && !m.reserveDeposited ? 0 : m.reserveAllocation;
+    final reserve = actual ? m.reserveActual : m.reserveForecast;
     final history = {
       ...data.months.keys.where((k) => k.compareTo(m.key) <= 0),
       m.key,
@@ -1745,20 +1908,20 @@ class _FinanceHomeState extends State<FinanceHome> {
     );
     if (values == null) return;
     final allocation = parseMoney(values[3])!;
-    final resetDeposit =
-        m.reserveDeposited && allocation != m.reserveAllocation;
+    if (m.reserveDeposited && allocation != m.reserveAllocation) {
+      if (mounted) {
+        notify(
+          context,
+          'Desfaça o depósito anterior e registre-o com uma data antes de alterar o planejamento deste mês.',
+        );
+      }
+      return;
+    }
     data.reserveGoal = parseMoney(values[0])!;
     data.reserveSaved = parseMoney(values[1])!;
     data.reserveMonthly = parseMoney(values[2])!;
     m.reserveAllocation = allocation;
-    if (resetDeposit) m.reserveDeposited = false;
     await save();
-    if (resetDeposit && mounted) {
-      notify(
-        context,
-        'O valor do mês mudou. Toque em “Já guardei” depois de depositar.',
-      );
-    }
   }
 
   Future<List<String>?> numberForm(
@@ -1825,8 +1988,13 @@ class _FinanceHomeState extends State<FinanceHome> {
                           validator: i == dayIndex
                               ? (s) {
                                   final d = int.tryParse(s ?? '') ?? 0;
-                                  return d < 1 || d > 31
-                                      ? 'Use um dia entre 1 e 31'
+                                  final last = DateTime(
+                                    selected.year,
+                                    selected.month + 1,
+                                    0,
+                                  ).day;
+                                  return d < 1 || d > last
+                                      ? 'Use um dia entre 1 e $last'
                                       : null;
                                 }
                               : positive

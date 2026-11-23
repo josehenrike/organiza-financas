@@ -22,14 +22,47 @@ IconData pocketIcon(Pocket p) =>
 String money(int cents) =>
     NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$').format(cents / 100);
 String editableMoney(int cents) =>
-    (cents / 100).toStringAsFixed(2).replaceAll('.', ',');
+    NumberFormat('#,##0.00', 'pt_BR').format(cents / 100);
 String monthTitle(DateTime d) {
   final text = DateFormat("MMMM 'de' yyyy", 'pt_BR').format(d);
   return text[0].toUpperCase() + text.substring(1);
 }
 
 /// Aceita apenas algarismos, ponto e vírgula em campos de dinheiro.
-final moneyInput = [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))];
+final moneyInput = [MoneyInputFormatter()];
+
+/// Digitação em centavos: 123456 vira 1.234,56.
+class MoneyInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (!newValue.composing.isCollapsed) return newValue;
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return TextEditingValue.empty;
+    final cents = int.tryParse(digits);
+    if (cents == null || cents > 99999999900) return oldValue;
+    final text = editableMoney(cents);
+    final offset = newValue.selection.extentOffset.clamp(
+      0,
+      newValue.text.length,
+    );
+    var remaining = newValue.text
+        .substring(offset)
+        .replaceAll(RegExp(r'[^0-9]'), '')
+        .length;
+    var cursor = text.length;
+    while (cursor > 0 && remaining > 0) {
+      cursor--;
+      if (RegExp(r'[0-9]').hasMatch(text[cursor])) remaining--;
+    }
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: cursor),
+    );
+  }
+}
 
 class Panel extends StatelessWidget {
   const Panel({

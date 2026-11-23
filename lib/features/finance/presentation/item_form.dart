@@ -122,7 +122,13 @@ class _ItemFormState extends State<ItemForm> {
                   ? 'Limite do mês'
                   : group == Group.installment
                   ? 'Valor da parcela'
-                  : 'Valor total do mês',
+                  : group == Group.income
+                  ? 'Valor desta entrada'
+                  : 'Valor deste gasto',
+              helperText: group == Group.income
+                  ? 'Registre cada recebimento separadamente, sem somar os anteriores.'
+                  : null,
+              helperMaxLines: 3,
             ),
             validator: positiveMoney,
           ),

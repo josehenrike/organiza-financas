@@ -126,6 +126,15 @@ class Withdrawal {
       Withdrawal(id: j['id'], amount: j['amount'], day: j['day']);
 }
 
+class ReserveDeposit {
+  ReserveDeposit({required this.id, required this.amount, required this.day});
+  final String id;
+  final int amount, day;
+  Map<String, dynamic> toJson() => {'id': id, 'amount': amount, 'day': day};
+  factory ReserveDeposit.fromJson(Map<String, dynamic> j) =>
+      ReserveDeposit(id: j['id'], amount: j['amount'], day: j['day']);
+}
+
 class AgendaEntry {
   AgendaEntry(
     this.id,
@@ -149,17 +158,24 @@ class MonthPlan {
     List<Spending>? spending,
     Set<String>? paid,
     List<Withdrawal>? withdrawals,
+    List<ReserveDeposit>? reserveDeposits,
     this.reserveAllocation = 0,
     this.reserveDeposited = false,
   }) : items = items ?? [],
        spending = spending ?? [],
        paid = paid ?? {},
-       withdrawals = withdrawals ?? [];
+       withdrawals = withdrawals ?? [],
+       reserveDeposits = reserveDeposits ?? [];
   final String key;
   final List<PlanItem> items;
   final List<Spending> spending;
   final Set<String> paid;
   final List<Withdrawal> withdrawals;
+  final List<ReserveDeposit> reserveDeposits;
+  int get reserveActual =>
+      (reserveDeposited ? reserveAllocation : 0) +
+      reserveDeposits.fold(0, (total, deposit) => total + deposit.amount);
+  int get reserveForecast => max(reserveAllocation, reserveActual);
   int reserveAllocation;
   bool reserveDeposited;
   DateTime get date => DateTime.parse('$key-01');
@@ -268,6 +284,7 @@ class MonthPlan {
     'paid': paid.toList(),
     'withdrawals': withdrawals.map((w) => w.toJson()).toList(),
     'reserveAllocation': reserveAllocation,
+    'reserveDeposits': reserveDeposits.map((d) => d.toJson()).toList(),
     'reserveDeposited': reserveDeposited,
   };
   factory MonthPlan.fromJson(Map<String, dynamic> j) {
@@ -296,6 +313,9 @@ class MonthPlan {
           .toList(),
       paid: paid,
       withdrawals: withdrawals,
+      reserveDeposits: (j['reserveDeposits'] as List? ?? [])
+          .map((d) => ReserveDeposit.fromJson(d))
+          .toList(),
       reserveAllocation: j['reserveAllocation'],
       reserveDeposited: j['reserveDeposited'] ?? false,
     );
@@ -371,6 +391,17 @@ class FinanceData {
             m.key == entry.key,
       );
       require(m.reserveAllocation >= 0);
+      final lastDay = DateTime(m.date.year, m.date.month + 1, 0).day;
+      require(
+        m.reserveDeposits.every(
+          (d) =>
+              d.id.isNotEmpty && d.amount > 0 && d.day >= 1 && d.day <= lastDay,
+        ),
+      );
+      require(
+        m.reserveDeposits.map((d) => d.id).toSet().length ==
+            m.reserveDeposits.length,
+      );
       require(
         m.withdrawals.every((w) => w.amount > 0 && w.day >= 1 && w.day <= 31),
       );

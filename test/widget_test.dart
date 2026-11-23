@@ -57,6 +57,7 @@ void main() {
     Size size = const Size(390, 844),
     double scale = 1,
     ThemeMode mode = ThemeMode.light,
+    bool startHome = false,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -83,6 +84,20 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    if (data.months.containsKey('2026-10')) {
+      final now = DateTime.now();
+      final distance = (now.year - 2026) * 12 + now.month - 10;
+      for (var i = 0; i < distance.abs(); i++) {
+        await tester.tap(
+          find.byTooltip(distance > 0 ? 'Mês anterior' : 'Próximo mês'),
+        );
+        await tester.pumpAndSettle();
+      }
+    }
+    if (!startHome) {
+      await tester.tap(find.text('Cadastro').last);
+      await tester.pumpAndSettle();
+    }
   }
 
   Future<void> capture(WidgetTester tester, String name) async {
@@ -99,6 +114,19 @@ void main() {
       image.dispose();
     });
   }
+
+  testWidgets('início abre resumo e permite voltar pelo topo', (tester) async {
+    await open(tester, demoData(), startHome: true);
+    expect(find.text('Resumo do mês'), findsOneWidget);
+    await capture(tester, 'inicio-mobile');
+    await tester.tap(find.text('Abrir Negócio'));
+    await tester.pumpAndSettle();
+    expect(find.text('O negócio da família'), findsOneWidget);
+    await tester.tap(find.byTooltip('Início').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Resumo do mês'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('navegação em celular sem overflow e screenshots', (
     tester,
@@ -137,9 +165,11 @@ void main() {
     expect(data.month('2026-10').spent('alimentacao'), 69025);
     expect(find.widgetWithText(ListTile, 'Padaria teste'), findsOneWidget);
     // Editar o gasto pelo histórico.
+    await tester.ensureVisible(find.widgetWithText(ListTile, 'Padaria teste'));
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ListTile, 'Padaria teste'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(1), '60');
+    await tester.enterText(find.byType(TextFormField).at(1), '60,00');
     await tester.ensureVisible(
       find.widgetWithText(FilledButton, 'Salvar alteração'),
     );
@@ -258,7 +288,7 @@ void main() {
   testWidgets('registrar depósito soma a reserva do mês', (tester) async {
     final data = demoData();
     await open(tester, data);
-    final button = find.text('Já guardei');
+    final button = find.text('Registrar depósito');
     await tester.scrollUntilVisible(
       button,
       300,
@@ -271,17 +301,34 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(button);
     await tester.pumpAndSettle();
-    expect(data.reserveSaved, 85000);
-    expect(data.month('2026-10').reserveDeposited, isTrue);
-    await tester.tap(find.text('Desfazer').first);
+    await tester.enterText(find.byType(TextFormField).first, '100,00');
+    await tester.enterText(find.byType(TextFormField).at(1), '3');
+    await tester.tap(find.text('Salvar'));
     await tester.pumpAndSettle();
-    expect(data.reserveSaved, 65000);
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, '200,00');
+    await tester.enterText(find.byType(TextFormField).at(1), '10');
+    await tester.tap(find.text('Salvar'));
+    await tester.pumpAndSettle();
+    expect(data.reserveSaved, 95000);
+    expect(data.month('2026-10').reserveActual, 30000);
+    expect(data.month('2026-10').reserveDeposits.map((d) => d.day), [3, 10]);
+    final remove = find.byTooltip('Excluir depósito').first;
+    await tester.ensureVisible(remove);
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Excluir').last);
+    await tester.pumpAndSettle();
+    expect(data.reserveSaved, 85000);
+    expect(data.month('2026-10').reserveActual, 20000);
   });
   testWidgets('registra várias retiradas no mesmo mês', (tester) async {
     final data = demoData();
     await open(tester, data);
     final button = find.text('Registrar retirada');
-    for (final value in ['30', '45,50']) {
+    for (final value in ['30,00', '45,50']) {
       await tester.scrollUntilVisible(
         button,
         300,
@@ -305,7 +352,7 @@ void main() {
   });
   testWidgets('ícone de informação explica a retirada', (tester) async {
     await open(tester, demoData());
-    final info = find.byTooltip('Saiba mais: A ponte entre a roça e a casa');
+    final info = find.byTooltip('Saiba mais: Do negócio para a família');
     await tester.scrollUntilVisible(
       info,
       300,
@@ -339,7 +386,7 @@ void main() {
     await tester.tap(info);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    final text = find.textContaining('toque em “Já guardei”');
+    final text = find.textContaining('Use Registrar depósito');
     // Sem rolagem o Flutter só corta o texto, sem erro: exige a rolagem.
     final scroll = find.descendant(
       of: find.byType(AlertDialog),
